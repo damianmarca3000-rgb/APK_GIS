@@ -1,31 +1,74 @@
-async function descargarData() {
-    // 1. Convertimos los datos a formato JSON
-    var data = JSON.stringify(drawnItems.toGeoJSON());
-    var blob = new Blob([data], {type: "application/json"});
-    var file = new File([blob], "inspeccion_campo.geojson", {type: "application/json"});
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supervisión con Lista de Selección</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+    <style>
+        body, #map { height: 100vh; width: 100vw; margin: 0; }
+        .controls { position: absolute; bottom: 20px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 5px; }
+        #lista-dibujos { position: absolute; top: 10px; right: 10px; width: 200px; background: white; padding: 10px; z-index: 1000; max-height: 300px; overflow-y: auto; border-radius: 5px; font-size: 12px; }
+        button { padding: 10px; background: white; border: 1px solid #444; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="lista-dibujos">
+        <h4>Mis Dibujos:</h4>
+        <div id="items-container"></div>
+        <button onclick="compartirSeleccionados()">📤 Compartir Seleccionados</button>
+    </div>
+    <div id="map"></div>
+    <div class="controls">
+        <button onclick="map.locate({setView: true})">📍 Ubicación</button>
+    </div>
 
-    // 2. Verificamos si el navegador permite compartir archivos
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-            await navigator.share({
-                files: [file],
-                title: 'Datos de Supervisión',
-                text: 'Aquí tienes los datos de inspección de campo.'
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    
+    <script>
+        var map = L.map('map').setView([-15.48, -70.13], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+        var dibujoMap = new Map(); // Mapa para relacionar IDs con capas
+
+        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true } }).addTo(map);
+
+        map.on(L.Draw.Event.CREATED, function (e) {
+            var layer = e.layer;
+            var id = L.stamp(layer);
+            drawnItems.addLayer(layer);
+            dibujoMap.set(id, layer);
+            
+            var div = document.createElement('div');
+            div.innerHTML = `<input type="checkbox" id="chk-${id}" checked> Dibujo ${id}`;
+            document.getElementById('items-container').appendChild(div);
+        });
+
+        async function compartirSeleccionados() {
+            var featureCollection = { type: "FeatureCollection", features: [] };
+            
+            dibujoMap.forEach((layer, id) => {
+                if (document.getElementById(`chk-${id}`).checked) {
+                    featureCollection.features.push(layer.toGeoJSON());
+                }
             });
-        } catch (error) {
-            console.error('Error al compartir:', error);
-            // Si falla, hacemos la descarga normal
-            descargarArchivoNormal(blob);
-        }
-    } else {
-        // Si el navegador no permite compartir archivos, hacemos descarga normal
-        descargarArchivoNormal(blob);
-    }
-}
 
-function descargarArchivoNormal(blob) {
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = "inspeccion_campo.geojson";
-    a.click();
-}
+            var blob = new Blob([JSON.stringify(featureCollection)], {type: "application/json"});
+            var file = new File([blob], "seleccion.geojson", {type: "application/json"});
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: 'Datos Seleccionados', text: 'Mi inspección' });
+            } else {
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = "seleccion.geojson";
+                a.click();
+            }
+        }
+    </script>
+</body>
+</html>
