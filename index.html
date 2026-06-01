@@ -124,7 +124,10 @@
             const zip = new JSZip();
             const fecha = new Date().toISOString().slice(0,10);
             let csv = "Codigo,Serie,Fases,NombreArchivo\n";
-            let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
+            let kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+    <Style id="style"><LineStyle><color>ff0000ff</color><width>3</width></LineStyle><PolyStyle><color>7f0000ff</color></PolyStyle></Style>`;
             
             let seleccionados = document.querySelectorAll('.export-check:checked');
             if(seleccionados.length === 0) { alert("Selecciona al menos un trazo"); return; }
@@ -134,30 +137,32 @@
                 let d = l.myData;
                 csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
 
-                kml += `<Placemark><name>${d.codigo}</name>`;
+                kml += `<Placemark><name>${d.codigo}</name><styleUrl>#style</styleUrl>`;
                 if (l instanceof L.Polygon) {
                     kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`;
-                    l.getLatLngs()[0].forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    let coords = l.getLatLngs()[0];
+                    coords.forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `${coords[0].lng},${coords[0].lat},0`;
                     kml += `</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
                 } else if (l instanceof L.Polyline) {
                     kml += `<LineString><coordinates>`;
                     l.getLatLngs().forEach(p => kml += `${p.lng},${p.lat},0 `);
                     kml += `</coordinates></LineString>`;
                 } else {
-                    kml += `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point>`;
+                    kml += `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates></Point>`;
                 }
                 kml += `</Placemark>`;
                 if(d.foto) zip.file(d.fotoNombre, d.foto.split(',')[1], {base64: true});
             });
 
             kml += `</Document></kml>`;
-            zip.file(`Seleccion_${fecha}.csv`, csv);
-            zip.file(`Seleccion_${fecha}.kml`, kml);
+            zip.file(`Datos_${fecha}.csv`, csv);
+            zip.file(`Datos_${fecha}.kml`, kml);
 
             const content = await zip.generateAsync({type:"blob"});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(content);
-            a.download = `Electropuno_Seleccion_${fecha}.zip`;
+            a.download = `Electropuno_GIS_${fecha}.zip`;
             a.click();
         }
     </script>
