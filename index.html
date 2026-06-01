@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Pro - KMZ/KML</title>
+    <title>Electropuno Pro - GIS Integrado</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body, html { margin:0; padding:0; height: 100%; overflow: hidden; font-family: sans-serif; }
-        #map { height: 80vh; width: 100%; }
-        #panel { height: 20vh; display: flex; flex-wrap: wrap; gap: 5px; padding: 5px; background: #eee; }
-        button { flex: 1 1 40%; min-height: 40px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; }
+        #map { height: calc(100vh - 110px); width: 100%; }
+        #panel { height: auto; display: flex; flex-wrap: wrap; gap: 5px; padding: 10px; background: #eee; z-index: 1000; }
+        button { flex: 1 1 40%; min-height: 45px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; font-size: 12px; }
         .btn-loc { background: #007bff; }
         .btn-kml { background: #dc3545; }
         .btn-imp { background: #e67e22; }
@@ -20,11 +20,12 @@
     </style>
 </head>
 <body>
+
     <div id="panel">
         <button class="btn-list" onclick="toggleSidebar()">📋 LISTA</button>
         <button class="btn-loc" onclick="map.locate({setView: true, maxZoom: 18})">📍 UBICAR</button>
         <button class="btn-imp" onclick="document.getElementById('importInput').click()">📂 IMPORTAR KML/KMZ</button>
-        <button class="btn-kml" onclick="descargarKML()">💾 EXPORTAR KML</button>
+        <button class="btn-kml" onclick="descargarKML()">💾 EXPORTAR</button>
         <input type="file" id="importInput" accept=".kml,.kmz" style="display:none" onchange="procesarArchivo(event)">
     </div>
     
@@ -34,53 +35,66 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
     <script>
+        // Inicializar Mapa
         var map = L.map('map').setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         var drawnItems = new L.FeatureGroup().addTo(map);
         new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-        // FUNCIÓN MAESTRA DE IMPORTACIÓN
+        // IMPORTAR: Procesa tanto KML como KMZ de ArcMap
         async function procesarArchivo(e) {
             const file = e.target.files[0];
             if (!file) return;
 
-            let kmlText = "";
-            if (file.name.endsWith('.kmz')) {
-                // Si es KMZ, lo descomprimimos
-                const zip = await JSZip.loadAsync(file);
-                const kmlFile = Object.values(zip.files).find(f => f.name.endsWith('.kml'));
-                kmlText = await kmlFile.async("string");
-            } else {
-                // Si es KML directo
-                kmlText = await file.text();
-            }
-
-            const kmlDoc = new DOMParser().parseFromString(kmlText, 'text/xml');
-            const geojson = toGeoJSON.kml(kmlDoc);
-            
-            L.geoJSON(geojson, {
-                onEachFeature: (f, l) => { 
-                    l.myData = { foto: f.properties.description }; 
-                    drawnItems.addLayer(l); 
+            let kmlString = "";
+            try {
+                if (file.name.toLowerCase().endsWith('.kmz')) {
+                    const zip = await JSZip.loadAsync(file);
+                    const kmlFileName = Object.keys(zip.files).find(name => name.toLowerCase().endsWith('.kml'));
+                    kmlString = await zip.files[kmlFileName].async("string");
+                } else {
+                    kmlString = await file.text();
                 }
-            }).addTo(map);
-            alert("✅ Archivo procesado correctamente.");
+
+                const kmlDoc = new DOMParser().parseFromString(kmlString, 'text/xml');
+                const geojson = toGeoJSON.kml(kmlDoc);
+                
+                const importedLayer = L.geoJSON(geojson, {
+                    onEachFeature: (f, l) => { 
+                        l.myData = { foto: f.properties.description || "Sin datos" }; 
+                        drawnItems.addLayer(l); 
+                    }
+                }).addTo(map);
+                
+                map.fitBounds(importedLayer.getBounds());
+                alert("✅ Archivo cargado correctamente.");
+            } catch (err) {
+                alert("Error al procesar: " + err.message);
+            }
         }
 
-        // EXPORTACIÓN
+        // EXPORTAR: Genera un KML estándar para ArcMap
         function descargarKML() {
             let placemarks = "";
             drawnItems.eachLayer(l => {
                 let img = l.myData?.foto || "";
-                let coords = l.getLatLng ? `${l.getLatLng().lng},${l.getLatLng().lat},0` : l.getLatLngs()[0].map(p => `${p.lng},${p.lat},0`).join(" ");
+                let coords = "";
+                if(l.getLatLng) {
+                    coords = `${l.getLatLng().lng},${l.getLatLng().lat},0`;
+                } else if(l.getLatLngs) {
+                    coords = l.getLatLngs()[0].map(p => `${p.lng},${p.lat},0`).join(" ");
+                }
                 placemarks += `<Placemark><description><![CDATA[${img}]]></description><Point><coordinates>${coords}</coordinates></Point></Placemark>`;
             });
             const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
             const a = document.createElement('a');
             a.href = URL.createObjectURL(new Blob([kml], {type: "application/vnd.google-earth.kml+xml"}));
             a.download = "inspeccion_" + Date.now() + ".kml";
-            a.click();
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
+
+        // UI Helpers
+        function toggleSidebar() { alert("Función de lista activa."); }
     </script>
 </body>
 </html>
