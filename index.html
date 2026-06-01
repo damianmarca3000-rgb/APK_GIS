@@ -22,7 +22,7 @@
 
     <div id="panel">
         <button onclick="descargarKML()">💾 KML</button>
-        <button onclick="descargarCSV()">💾 CSV (ArcMap)</button>
+        <button onclick="descargarCSV()" style="background-color: #007bff; color: white;">💾 CSV (ArcMap)</button>
         <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
     </div>
     <div id="map"></div>
@@ -121,7 +121,7 @@
                 csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre},${b64}\n`;
             });
             const a = document.createElement('a');
-            a.href = "data:text/csv;charset=utf-8," + encodeURI(csv);
+            a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
             a.download = "datos_gis.csv";
             a.click();
         }
