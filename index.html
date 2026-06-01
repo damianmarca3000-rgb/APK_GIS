@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Electropuno Pro - Captura GIS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
@@ -12,17 +12,17 @@
         #panel { height: 60px; display: flex; gap: 5px; padding: 5px; background: #eee; align-items: center; }
         #sidebar { position:fixed; top:60px; right:-260px; width:260px; height:100%; background:white; z-index:999; transition:0.3s; padding:10px; box-shadow:-2px 0 5px #ccc; overflow-y: auto; }
         #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; max-height:80vh; overflow-y:auto; }
+        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; }
         input { display:block; width:90%; margin:10px 0; padding:10px; }
-        #preview { width:100%; max-height:150px; object-fit:contain; margin-top:10px; display:none; }
-        .list-item { border-bottom:1px solid #ddd; padding:10px 0; display:flex; justify-content:space-between; align-items:center; }
+        #preview { width:100%; max-height:150px; object-fit:contain; display:none; }
+        .list-item { border-bottom:1px solid #ddd; padding:10px 0; display:flex; justify-content:space-between; }
     </style>
 </head>
 <body>
 
     <div id="panel">
-        <button onclick="document.getElementById('importInput').click()">📂 IMP</button>
-        <button onclick="descargarKML()">💾 EXP</button>
+        <button onclick="descargarKML()">💾 KML</button>
+        <button onclick="descargarCSV()">💾 CSV (ArcMap)</button>
         <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
     </div>
     <div id="map"></div>
@@ -39,21 +39,12 @@
             <input type="text" id="codRuta" placeholder="Código de Ruta">
             <input type="text" id="numSerie" placeholder="N° Serie">
             <input type="text" id="fases" placeholder="Fases (A,B,C)">
-            
-            <div style="display:flex; gap:5px;">
-                <button onclick="document.getElementById('camaraInput').click()" style="flex:1">📸 CÁMARA</button>
-                <button onclick="document.getElementById('fotoInput').click()" style="flex:1">📁 ARCHIVO</button>
-            </div>
-            
+            <button onclick="document.getElementById('camaraInput').click()">📸 FOTO</button>
             <input type="file" id="camaraInput" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(event)">
-            <input type="file" id="fotoInput" accept="image/*" style="display:none" onchange="procesarImagen(event)">
-            
             <img id="preview" src="" alt="Foto">
-            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; padding:10px; background:#28a745; color:white;">GUARDAR</button>
+            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; background:#28a745; color:white;">GUARDAR</button>
         </div>
     </div>
-
-    <input type="file" id="importInput" accept=".kml,.kmz" style="display:none">
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
@@ -74,15 +65,13 @@
         });
 
         function procesarImagen(e) {
-            const file = e.target.files[0];
-            if (!file) return;
             const reader = new FileReader();
             reader.onload = (event) => {
                 fotoBase64 = event.target.result;
                 document.getElementById('preview').src = fotoBase64;
                 document.getElementById('preview').style.display = 'block';
             };
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(e.target.files[0]);
         }
 
         function limpiarFormulario() {
@@ -96,10 +85,11 @@
 
         function guardarDatos() {
             activeLayer.myData = {
-                codigo: document.getElementById('codRuta').value,
-                serie: document.getElementById('numSerie').value,
-                fases: document.getElementById('fases').value,
-                foto: fotoBase64
+                codigo: document.getElementById('codRuta').value || 'SinCodigo',
+                serie: document.getElementById('numSerie').value || 'S/N',
+                fases: document.getElementById('fases').value || 'N/A',
+                foto: fotoBase64,
+                fotoNombre: "FOTO_" + (document.getElementById('codRuta').value || Date.now()) + ".jpg"
             };
             if(!drawnItems.hasLayer(activeLayer)) drawnItems.addLayer(activeLayer);
             actualizarLista();
@@ -112,8 +102,7 @@
             drawnItems.eachLayer((layer) => {
                 let div = document.createElement('div');
                 div.className = 'list-item';
-                div.innerHTML = `<span>${layer.myData?.codigo || 'Trazo'}</span>
-                                 <button onclick="editarTrazo(${L.stamp(layer)})">✏️</button>`;
+                div.innerHTML = `<span>${layer.myData?.codigo}</span><button onclick="editarTrazo(${L.stamp(layer)})">✏️</button>`;
                 container.appendChild(div);
             });
         }
@@ -124,26 +113,29 @@
             document.getElementById('form-overlay').style.display = 'flex';
         }
 
+        function descargarCSV() {
+            let csv = "Codigo,Serie,Fases,NombreArchivo,Base64\n";
+            drawnItems.eachLayer(l => {
+                let d = l.myData || {};
+                let b64 = d.foto ? d.foto.split(',')[1] : "";
+                csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre},${b64}\n`;
+            });
+            const a = document.createElement('a');
+            a.href = "data:text/csv;charset=utf-8," + encodeURI(csv);
+            a.download = "datos_gis.csv";
+            a.click();
+        }
+
         function descargarKML() {
             let placemarks = "";
             drawnItems.eachLayer(l => {
-                let d = l.myData || {codigo:'N/A', serie:'N/A', fases:'N/A', foto:''};
-                let geom = (l instanceof L.Marker) ? `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates></Point>` : 
-                           (l instanceof L.Polygon) ? `<Polygon><outerBoundaryIs><LinearRing><coordinates>${l.getLatLngs()[0].map(p => p.lng+','+p.lat+',0').join(" ")}</coordinates></LinearRing></outerBoundaryIs></Polygon>` :
-                           `<LineString><coordinates>${l.getLatLngs().map(p => p.lng+','+p.lat+',0').join(" ")}</coordinates></LineString>`;
-                
-                placemarks += `<Placemark>
-                    <ExtendedData>
-                        <Data name="Ruta"><value>${d.codigo}</value></Data>
-                        <Data name="Serie"><value>${d.serie}</value></Data>
-                        <Data name="Fases"><value>${d.fases}</value></Data>
-                        <Data name="Foto"><value><![CDATA[<img src="${d.foto}" width="200" />]]></value></Data>
-                    </ExtendedData>${geom}</Placemark>`;
+                let d = l.myData || {codigo:'N/A', fotoNombre:''};
+                placemarks += `<Placemark><name>${d.codigo}</name><ExtendedData><Data name="PhotoName"><value>${d.fotoNombre}</value></Data></ExtendedData><Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point></Placemark>`;
             });
             const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
             const a = document.createElement('a');
             a.href = URL.createObjectURL(new Blob([kml], {type: "application/vnd.google-earth.kml+xml"}));
-            a.download = "inspeccion_" + Date.now() + ".kml";
+            a.download = "inspeccion.kml";
             a.click();
         }
     </script>
