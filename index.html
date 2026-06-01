@@ -2,23 +2,25 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Visor de Campo Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor Electropuno Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
-        body { margin:0; display: flex; }
+        body { margin:0; display: flex; font-family: sans-serif; }
+        #sidebar { width: 320px; padding: 15px; background: #f8f9fa; height: 100vh; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.2); }
         #map { flex: 1; height: 100vh; }
-        #sidebar { width: 300px; padding: 10px; background: #f4f4f4; overflow-y: auto; }
-        .item { padding: 5px; border-bottom: 1px solid #ccc; cursor: pointer; }
-        .highlight { background: #ffeb3b; }
+        .item { padding: 10px; border-bottom: 1px solid #ccc; cursor: pointer; display: flex; align-items: center; gap: 8px; background: white; margin-bottom: 5px; border-radius: 4px; }
+        .item:hover { background: #e9ecef; }
+        .highlight { border: 2px solid #28a745; }
+        button { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="sidebar">
-        <h4>Registro de Trazos</h4>
-        <input type="file" id="loadKMZ" accept=".geojson,.json" title="Cargar archivo">
-        <div id="lista"></div>
-        <button onclick="compartirSeleccionados()">📤 Compartir Seleccionados</button>
+        <h4>Trazos de Supervisión</h4>
+        <div id="items-container"></div>
+        <button onclick="compartirSeleccionados()">📤 Exportar / Compartir</button>
     </div>
     <div id="map"></div>
 
@@ -29,49 +31,71 @@
         var map = L.map('map').setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // 1. Capa de Electropuno (URL de ejemplo, cambia por la tuya)
-        var electroLayer = L.tileLayer.wms("http://192.168.236.107/arcgis/services/Redes/MapServer/WmsServer", {
+        // Capa WMS Electropuno
+        L.tileLayer.wms("http://192.168.236.107/arcgis/services/Redes/MapServer/WmsServer", {
             layers: '0', format: 'image/png', transparent: true
         }).addTo(map);
 
         var drawnItems = new L.FeatureGroup().addTo(map);
-        var userMarker = L.marker([0,0]).addTo(map);
+        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true } }).addTo(map);
-
-        // 2. Ubicación GPS dinámica
-        map.on('locationfound', function(e) { userMarker.setLatLng(e.latlng); map.setView(e.latlng, 18); });
-        
-        // 3. Gestión de Lista y Resaltado
+        // Evento de creación
         map.on(L.Draw.Event.CREATED, function (e) {
             var layer = e.layer;
+            layer.feature = { properties: { nombre: "Nuevo Trazo", foto: null } };
             drawnItems.addLayer(layer);
-            var id = L.stamp(layer);
-            
-            var div = document.createElement('div');
-            div.className = 'item';
-            div.id = 'row-' + id;
-            div.innerHTML = `<input type="checkbox" checked> Trazo ${id}`;
-            div.onclick = () => {
-                document.querySelectorAll('.item').forEach(i => i.classList.remove('highlight'));
-                div.classList.add('highlight');
-                layer.openPopup();
-            };
-            document.getElementById('lista').appendChild(div);
-            layer.bindPopup("Foto/Nota: <input type='file' accept='image/*'>");
+            actualizarSidebar();
         });
 
-        async function compartirSeleccionados() {
-            var features = [];
+        function actualizarSidebar() {
+            const container = document.getElementById('items-container');
+            container.innerHTML = '';
             drawnItems.eachLayer(layer => {
-                var id = L.stamp(layer);
-                if (document.querySelector(`#row-${id} input`).checked) features.push(layer.toGeoJSON());
+                const id = L.stamp(layer);
+                const div = document.createElement('div');
+                div.className = 'item';
+                div.innerHTML = `
+                    <input type="checkbox" checked> 
+                    <span onclick="enfocar(${id})">${layer.feature.properties.nombre}</span>
+                    <button onclick="editarPropiedades(${id})" style="width: auto; padding: 2px 8px;">✎</button>
+                `;
+                container.appendChild(div);
             });
-            var blob = new Blob([JSON.stringify({type: "FeatureCollection", features: features})], {type: "application/json"});
-            if (navigator.share) {
-                await navigator.share({files: [new File([blob], "data.geojson", {type: "application/json"})]});
+        }
+
+        function enfocar(id) {
+            const layer = drawnItems.getLayer(id);
+            if (layer.getBounds) map.fitBounds(layer.getBounds());
+            else map.setView(layer.getLatLng(), 18);
+        }
+
+        function editarPropiedades(id) {
+            const layer = drawnItems.getLayer(id);
+            const nombre = prompt("Nombre del trazo:", layer.feature.properties.nombre);
+            if (nombre) {
+                layer.feature.properties.nombre = nombre;
+                actualizarSidebar();
+            }
+        }
+
+        async function compartirSeleccionados() {
+            let features = [];
+            drawnItems.eachLayer(layer => {
+                let geo = layer.toGeoJSON();
+                geo.properties = layer.feature.properties;
+                features.push(geo);
+            });
+
+            const blob = new Blob([JSON.stringify({type: "FeatureCollection", features: features})], {type: "application/geo+json"});
+            const file = new File([blob], "inspeccion.geojson", {type: "application/geo+json"});
+
+            if (navigator.share && navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: 'Datos Electropuno', text: 'Informe de campo' });
             } else {
-                var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "data.geojson"; a.click();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = "inspeccion.geojson";
+                a.click();
             }
         }
     </script>
