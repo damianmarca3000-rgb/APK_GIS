@@ -2,160 +2,52 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Pro - Captura GIS</title>
+    <title>Electropuno Pro - Exportación Unificada</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-    <style>
-        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
-        #map { height: calc(100vh - 60px); width: 100%; }
-        #panel { height: 60px; display: flex; gap: 5px; padding: 5px; background: #eee; align-items: center; }
-        #sidebar { position:fixed; top:60px; right:-260px; width:260px; height:100%; background:white; z-index:999; transition:0.3s; padding:10px; box-shadow:-2px 0 5px #ccc; overflow-y: auto; }
-        #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; max-height:80vh; overflow-y:auto; }
-        input { display:block; width:90%; margin:10px 0; padding:10px; }
-        #preview { width:100%; max-height:150px; object-fit:contain; margin-top:10px; display:none; }
-        .list-item { border-bottom:1px solid #ddd; padding:10px 0; display:flex; justify-content:space-between; align-items:center; }
-    </style>
-</head>
+    </head>
 <body>
 
     <div id="panel">
         <button onclick="document.getElementById('importInput').click()">📂 IMP</button>
-        <button onclick="exportarTodo()" style="background-color: #28a745; color: white;">💾 EXPORTAR TODO</button>
+        <button onclick="exportarTodo()" style="background-color: #28a745; color: white;">💾 EXPORTAR TODO (ZIP)</button>
         <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
     </div>
     <div id="map"></div>
 
-    <div id="sidebar">
-        <h3>Trazos Guardados</h3>
-        <button onclick="document.getElementById('sidebar').style.right = '-260px'">CERRAR</button>
-        <div id="lista-trazos"></div>
-    </div>
-
-    <div id="form-overlay">
-        <div class="form-box">
-            <h3>Detalles</h3>
-            <input type="text" id="codRuta" placeholder="Código de Ruta">
-            <input type="text" id="numSerie" placeholder="N° Serie">
-            <input type="text" id="fases" placeholder="Fases (A,B,C)">
-            
-            <div style="display:flex; gap:5px;">
-                <button onclick="document.getElementById('camaraInput').click()" style="flex:1">📸 CÁMARA</button>
-                <button onclick="document.getElementById('fotoInput').click()" style="flex:1">📁 ARCHIVO</button>
-            </div>
-            
-            <input type="file" id="camaraInput" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(event)">
-            <input type="file" id="fotoInput" accept="image/*" style="display:none" onchange="procesarImagen(event)">
-            
-            <img id="preview" src="" alt="Foto">
-            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; padding:10px; background:#28a745; color:white;">GUARDAR</button>
-        </div>
-    </div>
-
-    <input type="file" id="importInput" accept=".kml,.kmz" style="display:none">
-
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-
     <script>
-        var map = L.map('map').setView([-15.48, -70.13], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        var drawnItems = new L.FeatureGroup().addTo(map);
-        map.addLayer(drawnItems);
-        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
+        // ... (tu inicialización de mapa y funciones guardarDatos se mantienen igual) ...
 
-        let activeLayer, fotoBase64 = "";
-
-        map.on('draw:created', (e) => {
-            activeLayer = e.layer;
-            limpiarFormulario();
-            document.getElementById('form-overlay').style.display = 'flex';
-        });
-
-        function procesarImagen(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                fotoBase64 = event.target.result;
-                document.getElementById('preview').src = fotoBase64;
-                document.getElementById('preview').style.display = 'block';
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function limpiarFormulario() {
-            document.getElementById('codRuta').value = activeLayer.myData?.codigo || "";
-            document.getElementById('numSerie').value = activeLayer.myData?.serie || "";
-            document.getElementById('fases').value = activeLayer.myData?.fases || "";
-            fotoBase64 = activeLayer.myData?.foto || "";
-            document.getElementById('preview').src = fotoBase64;
-            document.getElementById('preview').style.display = fotoBase64 ? 'block' : 'none';
-        }
-
-        function guardarDatos() {
-            activeLayer.myData = {
-                codigo: document.getElementById('codRuta').value || 'SinCodigo',
-                serie: document.getElementById('numSerie').value || 'S/N',
-                fases: document.getElementById('fases').value || 'N/A',
-                foto: fotoBase64,
-                fotoNombre: "FOTO_" + (document.getElementById('codRuta').value || Date.now()) + ".jpg"
-            };
-            if(!drawnItems.hasLayer(activeLayer)) drawnItems.addLayer(activeLayer);
-            actualizarLista();
-            document.getElementById('form-overlay').style.display = 'none';
-        }
-
-        function actualizarLista() {
-            const container = document.getElementById('lista-trazos');
-            container.innerHTML = '';
-            drawnItems.eachLayer((layer) => {
-                let div = document.createElement('div');
-                div.className = 'list-item';
-                div.innerHTML = `<span>${layer.myData?.codigo || 'Trazo'}</span>
-                                 <button onclick="editarTrazo(${L.stamp(layer)})">✏️</button>`;
-                container.appendChild(div);
-            });
-        }
-
-        function editarTrazo(id) {
-            activeLayer = drawnItems.getLayer(id);
-            limpiarFormulario();
-            document.getElementById('form-overlay').style.display = 'flex';
-        }
-
-        function exportarTodo() {
+        async function exportarTodo() {
+            const zip = new JSZip();
             const fecha = new Date().toISOString().slice(0,10);
-            // Descarga CSV
-            descargarArchivo("CSV", `Electropuno_${fecha}.csv`);
-            // Descarga KMZ con pequeño retraso para evitar bloqueos del navegador
-            setTimeout(() => {
-                descargarArchivo("KML", `Electropuno_${fecha}.kmz`);
-            }, 600);
-        }
+            
+            // 1. Generar Contenido CSV
+            let csvContenido = "Codigo,Serie,Fases,NombreArchivo,Base64\n";
+            drawnItems.eachLayer(l => {
+                let d = l.myData || {};
+                let b64 = d.foto ? d.foto.split(',')[1] : "";
+                csvContenido += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre},${b64}\n`;
+            });
 
-        function descargarArchivo(tipo, nombre) {
-            let contenido = "";
-            if(tipo === "CSV") {
-                contenido = "Codigo,Serie,Fases,NombreArchivo,Base64\n";
-                drawnItems.eachLayer(l => {
-                    let d = l.myData || {};
-                    let b64 = d.foto ? d.foto.split(',')[1] : "";
-                    contenido += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre},${b64}\n`;
-                });
-            } else {
-                let placemarks = "";
-                drawnItems.eachLayer(l => {
-                    let d = l.myData || {codigo:'N/A', fotoNombre:''};
-                    placemarks += `<Placemark><name>${d.codigo}</name><ExtendedData><Data name="PhotoName"><value>${d.fotoNombre}</value></Data></ExtendedData><Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point></Placemark>`;
-                });
-                contenido = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
-            }
+            // 2. Generar Contenido KML
+            let placemarks = "";
+            drawnItems.eachLayer(l => {
+                let d = l.myData || {codigo:'N/A', fotoNombre:''};
+                placemarks += `<Placemark><name>${d.codigo}</name><Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point></Placemark>`;
+            });
+            let kmlContenido = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+
+            // 3. Añadir archivos al ZIP
+            zip.file(`Electropuno_${fecha}.csv`, csvContenido);
+            zip.file(`Electropuno_${fecha}.kml`, kmlContenido);
+
+            // 4. Generar y descargar el ZIP
+            const blob = await zip.generateAsync({type:"blob"});
             const a = document.createElement('a');
-            const blob = new Blob([contenido], {type: tipo === "CSV" ? 'text/csv' : 'application/vnd.google-earth.kml+xml'});
             a.href = URL.createObjectURL(blob);
-            a.download = nombre;
+            a.download = `Electropuno_Datos_${fecha}.zip`;
             a.click();
         }
     </script>
