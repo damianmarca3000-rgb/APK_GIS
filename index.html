@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Pro</title>
+    <title>Electropuno Pro - GIS Integrado</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
@@ -11,11 +11,15 @@
         body, html { margin:0; padding:0; height: 100%; overflow: hidden; font-family: sans-serif; }
         #map { height: calc(100vh - 100px); width: 100%; }
         #panel { height: auto; display: flex; flex-wrap: wrap; gap: 5px; padding: 5px; background: #eee; z-index: 1000; }
-        button { flex: 1 1 40%; min-height: 45px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; }
+        button { flex: 1 1 40%; min-height: 45px; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; font-size: 12px; }
         .btn-loc { background: #007bff; }
         .btn-kml { background: #dc3545; }
         .btn-imp { background: #e67e22; }
         .btn-list { background: #6c757d; }
+        #photo-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; color: white; flex-direction: column; }
+        #sidebar { position: fixed; top: 0; right: -250px; width: 250px; height: 100%; background: white; z-index: 3000; box-shadow: -2px 0 5px rgba(0,0,0,0.3); padding: 20px; overflow-y: auto; transition: right 0.3s ease; }
+        #sidebar.active { right: 0; }
+        .list-item { padding: 15px; border-bottom: 1px solid #ccc; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -27,5 +31,96 @@
         <input type="file" id="importInput" accept=".kml" style="display:none" onchange="importarKML(event)">
     </div>
     <div id="map"></div>
-    </body>
+
+    <div id="sidebar">
+        <h3>Trazos Registrados</h3>
+        <button onclick="toggleSidebar()" style="background:red; width:100%; padding:10px;">Cerrar</button>
+        <div id="list-container"></div>
+    </div>
+
+    <div id="photo-overlay">
+        <h3>Capturar Evidencia</h3>
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+        <button id="btnTrigger" style="padding: 20px; background: #ffc107; color: black;">📸 ABRIR CÁMARA</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    
+    <script>
+        var map = L.map('map', { tap: true }).setView([-15.48, -70.13], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        var drawnItems = new L.FeatureGroup().addTo(map);
+        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
+
+        let currentLayer = null;
+
+        // IMPORTAR KML (Soporta archivos de ArcMap y propios)
+        function importarKML(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const kmlDoc = new DOMParser().parseFromString(event.target.result, 'text/xml');
+                const geojson = toGeoJSON.kml(kmlDoc);
+                L.geoJSON(geojson, {
+                    onEachFeature: function (feature, layer) {
+                        layer.myData = { foto: feature.properties.description || null, fecha: 'Importado' };
+                        drawnItems.addLayer(layer);
+                    }
+                }).addTo(map);
+                map.fitBounds(drawnItems.getBounds());
+                alert("✅ Archivo cargado correctamente.");
+            };
+            reader.readAsText(file);
+        }
+
+        // EXPORTAR KML (Compatible con ArcMap)
+        function descargarKML() {
+            let placemarks = "";
+            drawnItems.eachLayer(l => {
+                let img = l.myData?.foto || "";
+                let geometryTag = "";
+                if (l instanceof L.Marker) {
+                    let ll = l.getLatLng();
+                    geometryTag = `<Point><coordinates>${ll.lng},${ll.lat},0</coordinates></Point>`;
+                } else if (l instanceof L.Polyline || l instanceof L.Polygon) {
+                    let coords = (l instanceof L.Polygon ? l.getLatLngs()[0] : l.getLatLngs()).map(p => `${p.lng},${p.lat},0`).join(" ");
+                    geometryTag = (l instanceof L.Polygon) ? `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coords}</coordinates></LinearRing></outerBoundaryIs></Polygon>` : `<LineString><coordinates>${coords}</coordinates></LineString>`;
+                }
+                placemarks += `<Placemark><description><![CDATA[${img.startsWith('data:') ? '<img src="'+img+'" width="300px" />' : img}]]></description>${geometryTag}</Placemark>`;
+            });
+            const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([kml], {type: "application/vnd.google-earth.kml+xml"}));
+            a.download = "inspeccion_" + new Date().getTime() + ".kml";
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+
+        map.on(L.Draw.Event.CREATED, (e) => {
+            currentLayer = e.layer;
+            currentLayer.myData = { foto: null, fecha: new Date().toLocaleString() };
+            drawnItems.addLayer(currentLayer);
+            document.getElementById('photo-overlay').style.display = 'flex';
+        });
+
+        document.getElementById('btnTrigger').onclick = () => document.getElementById('cameraInput').click();
+        document.getElementById('cameraInput').onchange = (e) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => { currentLayer.myData.foto = ev.target.result; document.getElementById('photo-overlay').style.display = 'none'; alert("✅ Foto guardada."); };
+            reader.readAsDataURL(e.target.files[0]);
+        };
+
+        function toggleSidebar() { const sb = document.getElementById('sidebar'); sb.classList.toggle('active'); if(sb.classList.contains('active')) actualizarLista(); }
+        function actualizarLista() {
+            const container = document.getElementById('list-container'); container.innerHTML = '';
+            drawnItems.eachLayer((layer) => {
+                const div = document.createElement('div'); div.className = 'list-item';
+                div.innerHTML = `Trazo a las ${layer.myData?.fecha}`;
+                div.onclick = () => { map.fitBounds(layer.getBounds ? layer.getBounds() : L.latLngBounds(layer.getLatLng(), layer.getLatLng())); toggleSidebar(); };
+                container.appendChild(div);
+            });
+        }
+    </script>
+</body>
 </html>
