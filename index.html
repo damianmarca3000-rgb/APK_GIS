@@ -133,8 +133,20 @@
                 let l = drawnItems.getLayer(chk.value);
                 let d = l.myData;
                 csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
-                let coords = l.getLatLng ? `${l.getLatLng().lng},${l.getLatLng().lat}` : `${l.getBounds().getCenter().lng},${l.getBounds().getCenter().lat}`;
-                kml += `<Placemark><name>${d.codigo}</name><Point><coordinates>${coords}</coordinates></Point></Placemark>`;
+
+                kml += `<Placemark><name>${d.codigo}</name>`;
+                if (l instanceof L.Polygon) {
+                    kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`;
+                    l.getLatLngs()[0].forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+                } else if (l instanceof L.Polyline) {
+                    kml += `<LineString><coordinates>`;
+                    l.getLatLngs().forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `</coordinates></LineString>`;
+                } else {
+                    kml += `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point>`;
+                }
+                kml += `</Placemark>`;
                 if(d.foto) zip.file(d.fotoNombre, d.foto.split(',')[1], {base64: true});
             });
 
