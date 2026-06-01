@@ -9,19 +9,30 @@
     <style>
         body, html { margin:0; padding:0; height: 100%; overflow: hidden; font-family: sans-serif; }
         #map { height: calc(100vh - 80px); width: 100%; }
-        #panel { height: 80px; display: flex; gap: 5px; padding: 5px; background: #eee; }
+        #panel { height: 80px; display: flex; gap: 5px; padding: 5px; background: #eee; z-index: 1000; }
         button { flex: 1; border: none; border-radius: 10px; font-weight: bold; color: white; cursor: pointer; }
         .btn-loc { background: #007bff; }
         .btn-exp { background: #28a745; }
-        /* Capa transparente de captura */
+        .btn-list { background: #6c757d; }
+        
         #photo-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; color: white; flex-direction: column; }
+        
+        #sidebar { display: none; position: fixed; top: 0; right: 0; width: 250px; height: 100%; background: white; z-index: 3000; box-shadow: -2px 0 5px rgba(0,0,0,0.3); padding: 20px; overflow-y: auto; }
+        .list-item { padding: 10px; border-bottom: 1px solid #ccc; cursor: pointer; }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div id="panel">
+        <button class="btn-list" onclick="toggleSidebar()">📋 LISTA</button>
         <button class="btn-loc" onclick="map.locate({setView: true, maxZoom: 18})">📍 UBICAR</button>
-        <button class="btn-exp" onclick="descargarGeoJSON()">💾 EXPORTAR</button>
+        <button class="btn-exp" onclick="descargarGeoJSON()">💾 EXP</button>
+    </div>
+
+    <div id="sidebar">
+        <h3>Trazos Registrados</h3>
+        <button onclick="toggleSidebar()" style="background:red">Cerrar</button>
+        <div id="list-container"></div>
     </div>
 
     <div id="photo-overlay">
@@ -46,12 +57,32 @@
 
         let currentLayer = null;
 
+        function toggleSidebar() {
+            const sb = document.getElementById('sidebar');
+            sb.style.display = (sb.style.display === 'block') ? 'none' : 'block';
+            if(sb.style.display === 'block') actualizarLista();
+        }
+
+        function actualizarLista() {
+            const container = document.getElementById('list-container');
+            container.innerHTML = '';
+            drawnItems.eachLayer((layer, index) => {
+                const id = L.stamp(layer);
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                div.innerHTML = `Trazo ${id} - ${layer.feature.properties.fecha.split(',')[1]}`;
+                div.onclick = () => {
+                    map.fitBounds(layer.getBounds ? layer.getBounds() : L.latLngBounds(layer.getLatLng(), layer.getLatLng()));
+                    toggleSidebar();
+                };
+                container.appendChild(div);
+            });
+        }
+
         map.on(L.Draw.Event.CREATED, function (e) {
             currentLayer = e.layer;
             currentLayer.feature = { properties: { foto: null, fecha: new Date().toLocaleString() } };
             drawnItems.addLayer(currentLayer);
-            
-            // Mostrar la capa transparente para tomar la foto
             document.getElementById('photo-overlay').style.display = 'flex';
         });
 
@@ -64,7 +95,7 @@
                 reader.onload = function(event) {
                     currentLayer.feature.properties.foto = event.target.result;
                     document.getElementById('photo-overlay').style.display = 'none';
-                    alert("✅ Foto capturada y vinculada.");
+                    alert("✅ Foto adjuntada.");
                 };
                 reader.readAsDataURL(file);
             }
@@ -78,7 +109,6 @@
                 features.push(g);
             });
             if (features.length === 0) return alert("Dibuja algo primero");
-            
             const data = JSON.stringify({type: "FeatureCollection", features: features});
             const blob = new Blob([data], {type: "application/json"});
             const a = document.createElement('a');
