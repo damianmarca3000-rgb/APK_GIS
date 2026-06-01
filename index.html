@@ -2,43 +2,51 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Electropuno Pro - Captura</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Electropuno Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body, html { margin:0; padding:0; height: 100%; overflow: hidden; }
+        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
         #map { height: calc(100vh - 60px); width: 100%; }
-        #panel { height: 60px; display: flex; gap: 5px; padding: 10px; background: #eee; }
-        /* Formulario Overlay */
+        #panel { height: 60px; display: flex; gap: 5px; padding: 5px; background: #eee; align-items: center; }
+        /* Sidebar y Formulario */
+        #sidebar { position:fixed; top:60px; right:-250px; width:250px; height:100%; background:white; z-index:999; transition:0.3s; padding:10px; box-shadow:-2px 0 5px #ccc; }
         #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; border-radius:10px; width:80%; max-width:400px; }
-        input { display:block; width:100%; margin:10px 0; padding:10px; }
+        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; }
+        input { display:block; width:90%; margin:10px 0; padding:10px; }
     </style>
 </head>
 <body>
 
     <div id="panel">
-        <button onclick="document.getElementById('importInput').click()">📂 IMPORTAR</button>
-        <button onclick="descargarKML()">💾 EXPORTAR</button>
-        <input type="file" id="importInput" accept=".kml,.kmz" style="display:none" onchange="procesarArchivo(event)">
+        <button onclick="document.getElementById('importInput').click()">📂 IMP</button>
+        <button onclick="descargarKML()">💾 EXP</button>
+        <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
     </div>
-    
     <div id="map"></div>
+
+    <div id="sidebar">
+        <h3>Trazos Guardados</h3>
+        <button onclick="this.parentElement.style.right = '-250px'">CERRAR</button>
+        <ul id="lista-trazos"></ul>
+    </div>
 
     <div id="form-overlay">
         <div class="form-box">
-            <h3>Detalles del Trazo</h3>
+            <h3>Detalles</h3>
             <input type="text" id="codRuta" placeholder="Código de Ruta">
-            <input type="text" id="numSerie" placeholder="Número de Serie">
-            <input type="text" id="fases" placeholder="Fases (Ej: A,B,C)">
+            <input type="text" id="numSerie" placeholder="N° Serie">
+            <input type="text" id="fases" placeholder="Fases (A,B,C)">
             <button onclick="guardarDatos()">GUARDAR</button>
         </div>
     </div>
 
+    <input type="file" id="importInput" accept=".kml,.kmz" style="display:none" onchange="procesarArchivo(event)">
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <script>
         var map = L.map('map').setView([-15.48, -70.13], 15);
@@ -51,7 +59,6 @@
 
         map.on('draw:created', (e) => {
             tempLayer = e.layer;
-            drawnItems.addLayer(tempLayer);
             document.getElementById('form-overlay').style.display = 'flex';
         });
 
@@ -61,34 +68,38 @@
                 serie: document.getElementById('numSerie').value,
                 fases: document.getElementById('fases').value
             };
+            drawnItems.addLayer(tempLayer);
+            actualizarLista();
             document.getElementById('form-overlay').style.display = 'none';
         }
 
-        // EXPORTACIÓN CON DATOS
+        function actualizarLista() {
+            const lista = document.getElementById('lista-trazos');
+            lista.innerHTML = '';
+            drawnItems.eachLayer((layer, id) => {
+                let li = document.createElement('li');
+                li.innerHTML = `Ruta: ${layer.myData?.codigo || 'Sin nombre'}`;
+                li.onclick = () => map.fitBounds(layer.getBounds ? layer.getBounds() : L.latLngBounds(layer.getLatLng(), layer.getLatLng()));
+                lista.appendChild(li);
+            });
+        }
+
         function descargarKML() {
             let placemarks = "";
             drawnItems.eachLayer(l => {
-                let data = l.myData || {codigo:'N/A', serie:'N/A', fases:'N/A'};
+                let d = l.myData || {codigo:'N/A', serie:'N/A', fases:'N/A'};
                 let geom = (l instanceof L.Marker) ? `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates></Point>` : 
                            (l instanceof L.Polygon) ? `<Polygon><outerBoundaryIs><LinearRing><coordinates>${l.getLatLngs()[0].map(p => p.lng+','+p.lat+',0').join(" ")}</coordinates></LinearRing></outerBoundaryIs></Polygon>` :
                            `<LineString><coordinates>${l.getLatLngs().map(p => p.lng+','+p.lat+',0').join(" ")}</coordinates></LineString>`;
                 
-                placemarks += `<Placemark>
-                    <ExtendedData>
-                        <Data name="Ruta"><value>${data.codigo}</value></Data>
-                        <Data name="Serie"><value>${data.serie}</value></Data>
-                        <Data name="Fases"><value>${data.fases}</value></Data>
-                    </ExtendedData>${geom}</Placemark>`;
+                placemarks += `<Placemark><ExtendedData><Data name="Ruta"><value>${d.codigo}</value></Data><Data name="Serie"><value>${d.serie}</value></Data><Data name="Fases"><value>${d.fases}</value></Data></ExtendedData>${geom}</Placemark>`;
             });
-
             const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
             const a = document.createElement('a');
             a.href = URL.createObjectURL(new Blob([kml], {type: "application/vnd.google-earth.kml+xml"}));
             a.download = "inspeccion_" + Date.now() + ".kml";
             a.click();
         }
-
-        async function procesarArchivo(e) { /* ... misma función anterior ... */ }
     </script>
 </body>
 </html>
