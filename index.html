@@ -127,11 +127,12 @@
 
         function exportarTodo() {
             const fecha = new Date().toISOString().slice(0,10);
+            // Descarga CSV
             descargarArchivo("CSV", `Electropuno_${fecha}.csv`);
-            // Retardo de 500ms para evitar que el navegador bloquee la segunda descarga
+            // Descarga KMZ con pequeño retraso para evitar bloqueos del navegador
             setTimeout(() => {
-                descargarArchivo("KML", `Electropuno_${fecha}.kml`);
-            }, 500);
+                descargarArchivo("KML", `Electropuno_${fecha}.kmz`);
+            }, 600);
         }
 
         function descargarArchivo(tipo, nombre) {
