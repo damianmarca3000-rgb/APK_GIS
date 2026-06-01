@@ -2,52 +2,54 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Electropuno Pro - Exportación Unificada</title>
+    <title>Electropuno Pro - Exportación Completa</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     </head>
 <body>
-
-    <div id="panel">
-        <button onclick="document.getElementById('importInput').click()">📂 IMP</button>
-        <button onclick="exportarTodo()" style="background-color: #28a745; color: white;">💾 EXPORTAR TODO (ZIP)</button>
-        <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
-    </div>
-    <div id="map"></div>
-
     <script>
-        // ... (tu inicialización de mapa y funciones guardarDatos se mantienen igual) ...
-
         async function exportarTodo() {
             const zip = new JSZip();
             const fecha = new Date().toISOString().slice(0,10);
             
             // 1. Generar Contenido CSV
-            let csvContenido = "Codigo,Serie,Fases,NombreArchivo,Base64\n";
-            drawnItems.eachLayer(l => {
-                let d = l.myData || {};
-                let b64 = d.foto ? d.foto.split(',')[1] : "";
-                csvContenido += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre},${b64}\n`;
-            });
-
+            let csvContenido = "Codigo,Serie,Fases,NombreArchivo\n";
+            
             // 2. Generar Contenido KML
             let placemarks = "";
+            
             drawnItems.eachLayer(l => {
-                let d = l.myData || {codigo:'N/A', fotoNombre:''};
-                placemarks += `<Placemark><name>${d.codigo}</name><Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point></Placemark>`;
+                let d = l.myData || {codigo:'N/A', serie:'S/N', fases:'N/A', fotoNombre:'', foto:''};
+                
+                // Agregar al CSV
+                csvContenido += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
+                
+                // Agregar al KML con enlace a la foto (ExtendedData)
+                placemarks += `
+                <Placemark>
+                    <name>${d.codigo}</name>
+                    <ExtendedData>
+                        <Data name="Foto"><value>${d.fotoNombre}</value></Data>
+                    </ExtendedData>
+                    <Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point>
+                </Placemark>`;
+
+                // 3. Añadir la imagen REAL al ZIP
+                if (d.foto) {
+                    // Convertir base64 a binario para el ZIP
+                    let base64Data = d.foto.split(',')[1];
+                    zip.file(d.fotoNombre, base64Data, {base64: true});
+                }
             });
-            let kmlContenido = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
 
-            // 3. Añadir archivos al ZIP
+            // 4. Finalizar archivos en el ZIP
             zip.file(`Electropuno_${fecha}.csv`, csvContenido);
-            zip.file(`Electropuno_${fecha}.kml`, kmlContenido);
+            zip.file(`Electropuno_${fecha}.kml`, `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`);
 
-            // 4. Generar y descargar el ZIP
+            // 5. Descargar el ZIP
             const blob = await zip.generateAsync({type:"blob"});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `Electropuno_Datos_${fecha}.zip`;
+            a.download = `Electropuno_Proyecto_${fecha}.zip`;
             a.click();
         }
     </script>
