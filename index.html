@@ -22,8 +22,7 @@
 
     <div id="panel">
         <button onclick="document.getElementById('importInput').click()">📂 IMP</button>
-        <button onclick="descargarKML()">💾 KML</button>
-        <button onclick="descargarCSV()" style="background-color: #007bff; color: white;">💾 CSV</button>
+        <button onclick="exportarTodo()" style="background-color: #28a745; color: white;">💾 EXPORTAR TODO</button>
         <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
     </div>
     <div id="map"></div>
@@ -126,29 +125,33 @@
             document.getElementById('form-overlay').style.display = 'flex';
         }
 
-        function descargarCSV() {
-            let csv = "Codigo,Serie,Fases,NombreArchivo,Base64\n";
-            drawnItems.eachLayer(l => {
-                let d = l.myData || {};
-                let b64 = d.foto ? d.foto.split(',')[1] : "";
-                csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre},${b64}\n`;
-            });
-            const a = document.createElement('a');
-            a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
-            a.download = "datos_gis.csv";
-            a.click();
+        function exportarTodo() {
+            const fecha = new Date().toISOString().slice(0,10);
+            descargarArchivo("CSV", `Electropuno_${fecha}.csv`);
+            descargarArchivo("KML", `Electropuno_${fecha}.kml`);
         }
 
-        function descargarKML() {
-            let placemarks = "";
-            drawnItems.eachLayer(l => {
-                let d = l.myData || {codigo:'N/A', fotoNombre:''};
-                placemarks += `<Placemark><name>${d.codigo}</name><ExtendedData><Data name="PhotoName"><value>${d.fotoNombre}</value></Data></ExtendedData><Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point></Placemark>`;
-            });
-            const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+        function descargarArchivo(tipo, nombre) {
+            let contenido = "";
+            if(tipo === "CSV") {
+                contenido = "Codigo,Serie,Fases,NombreArchivo,Base64\n";
+                drawnItems.eachLayer(l => {
+                    let d = l.myData || {};
+                    let b64 = d.foto ? d.foto.split(',')[1] : "";
+                    contenido += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre},${b64}\n`;
+                });
+            } else {
+                let placemarks = "";
+                drawnItems.eachLayer(l => {
+                    let d = l.myData || {codigo:'N/A', fotoNombre:''};
+                    placemarks += `<Placemark><name>${d.codigo}</name><ExtendedData><Data name="PhotoName"><value>${d.fotoNombre}</value></Data></ExtendedData><Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point></Placemark>`;
+                });
+                contenido = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+            }
             const a = document.createElement('a');
-            a.href = URL.createObjectURL(new Blob([kml], {type: "application/vnd.google-earth.kml+xml"}));
-            a.download = "inspeccion.kml";
+            const blob = new Blob([contenido], {type: tipo === "CSV" ? 'text/csv' : 'application/vnd.google-earth.kml+xml'});
+            a.href = URL.createObjectURL(blob);
+            a.download = nombre;
             a.click();
         }
     </script>
