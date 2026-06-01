@@ -1,15 +1,27 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor de Supervisión Electropuno</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-    <style> #map { height: 100vh; } </style>
+    <style>
+        body, #map { height: 100vh; width: 100vw; margin: 0; }
+        .btn-container { position: absolute; bottom: 30px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
+        button { padding: 15px; font-size: 14px; background: white; border: 1px solid #333; border-radius: 8px; cursor: pointer; }
+    </style>
 </head>
 <body>
     <div id="map"></div>
+    <div class="btn-container">
+        <button onclick="map.locate({setView: true})">📍 Ir a mi ubicación</button>
+        <button onclick="descargarData()">💾 Exportar datos (GeoJSON)</button>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    
     <script>
         var map = L.map('map').setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -17,12 +29,29 @@
         var drawnItems = new L.FeatureGroup();
         map.addLayer(drawnItems);
         
-        // Esta es tu "hoja transparente" para dibujar
-        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true } }).addTo(map);
+        // Controles de dibujo en español
+        new L.Control.Draw({ 
+            edit: { featureGroup: drawnItems }, 
+            draw: { 
+                polygon: { title: 'Dibujar un polígono' },
+                polyline: { title: 'Dibujar una línea' },
+                marker: { title: 'Añadir marcador' }
+            } 
+        }).addTo(map);
 
         map.on(L.Draw.Event.CREATED, function (e) {
             drawnItems.addLayer(e.layer);
         });
+
+        function descargarData() {
+            var data = JSON.stringify(drawnItems.toGeoJSON());
+            var blob = new Blob([data], {type: "application/json"});
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = "inspeccion_juliaca.geojson";
+            a.click();
+            alert("Archivo listo para importar en ArcMap");
+        }
     </script>
 </body>
 </html>
