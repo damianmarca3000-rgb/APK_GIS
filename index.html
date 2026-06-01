@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Móvil</title>
+    <title>Electropuno Móvil Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
         body { margin:0; padding:0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
         #map { flex: 1; width: 100%; }
-        #panel { height: 150px; background: #fff; padding: 10px; box-shadow: 0 -2px 5px rgba(0,0,0,0.2); z-index: 1000; display: flex; flex-direction: column; gap: 5px; }
-        button { padding: 15px; font-size: 16px; border: none; border-radius: 8px; background: #28a745; color: white; font-weight: bold; }
-        .info { font-size: 12px; color: #666; text-align: center; }
+        #panel { background: #fff; padding: 10px; box-shadow: 0 -2px 5px rgba(0,0,0,0.2); z-index: 1000; }
+        button { width: 100%; padding: 15px; font-size: 16px; border: none; border-radius: 8px; background: #28a745; color: white; font-weight: bold; margin-bottom: 5px; }
+        .btn-loc { background: #007bff !important; }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div id="panel">
-        <button onclick="descargarGeoJSON()">💾 GUARDAR Y EXPORTAR TRAZOS</button>
-        <div class="info">Toca el icono de lápiz en el mapa para dibujar.<br>Al terminar, pulsa el botón para descargar el archivo .geojson.</div>
+        <button class="btn-loc" onclick="map.locate({setView: true, maxZoom: 18})">📍 IR A MI UBICACIÓN</button>
+        <button onclick="descargarGeoJSON()">💾 EXPORTAR DATOS</button>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -28,7 +28,6 @@
         var map = L.map('map').setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // Capa WMS (Asegúrate de tener conexión a la red de Electropuno)
         L.tileLayer.wms("http://192.168.236.107/arcgis/services/Redes/MapServer/WmsServer", {
             layers: '0', format: 'image/png', transparent: true
         }).addTo(map);
@@ -39,26 +38,49 @@
             draw: { polygon: true, polyline: true, marker: true } 
         }).addTo(map);
 
+        // Al crear un elemento, abrir popup para foto
+        map.on(L.Draw.Event.CREATED, function (e) {
+            var layer = e.layer;
+            layer.feature = { properties: { foto: null } };
+            drawnItems.addLayer(layer);
+            
+            layer.bindPopup(`
+                <div style="text-align:center">
+                    <p>Capturar evidencia:</p>
+                    <input type="file" accept="image/*" capture="environment" onchange="subirFoto(event, ${L.stamp(layer)})">
+                </div>
+            `).openPopup();
+        });
+
+        function subirFoto(event, id) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const layer = drawnItems.getLayer(id);
+                layer.feature.properties.foto = e.target.result; // Guarda la imagen en base64
+                alert("Foto guardada correctamente.");
+            };
+            reader.readAsDataURL(file);
+        }
+
         function descargarGeoJSON() {
             let features = [];
-            drawnItems.eachLayer(layer => features.push(layer.toGeoJSON()));
+            drawnItems.eachLayer(layer => {
+                let geo = layer.toGeoJSON();
+                geo.properties = layer.feature.properties; // Incluye la foto (base64)
+                features.push(geo);
+            });
 
-            if (features.length === 0) {
-                alert("Primero dibuja algo en el mapa.");
-                return;
-            }
+            if (features.length === 0) return alert("Nada que exportar.");
 
             const data = JSON.stringify({type: "FeatureCollection", features: features});
             const blob = new Blob([data], {type: "application/json"});
-            
-            // Forzar descarga amigable para móvil
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = "inspeccion_" + new Date().toLocaleDateString() + ".geojson";
+            a.download = "inspeccion_" + new Date().getTime() + ".geojson";
             a.click();
         }
 
-        // Auto-ubicación al iniciar
         map.locate({setView: true, maxZoom: 17});
     </script>
 </body>
