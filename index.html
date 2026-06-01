@@ -3,16 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno App</title>
+    <title>Electropuno Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
         body, html { margin:0; padding:0; height: 100%; overflow: hidden; font-family: sans-serif; }
         #map { height: calc(100vh - 80px); width: 100%; }
         #panel { height: 80px; display: flex; gap: 5px; padding: 5px; background: #eee; }
-        button { flex: 1; border: none; border-radius: 10px; font-weight: bold; color: white; }
+        button { flex: 1; border: none; border-radius: 10px; font-weight: bold; color: white; cursor: pointer; }
         .btn-loc { background: #007bff; }
         .btn-exp { background: #28a745; }
+        /* Capa transparente de captura */
+        #photo-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; color: white; flex-direction: column; }
     </style>
 </head>
 <body>
@@ -20,6 +22,12 @@
     <div id="panel">
         <button class="btn-loc" onclick="map.locate({setView: true, maxZoom: 18})">📍 UBICAR</button>
         <button class="btn-exp" onclick="descargarGeoJSON()">💾 EXPORTAR</button>
+    </div>
+
+    <div id="photo-overlay">
+        <h3>Capturar Evidencia</h3>
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+        <button id="btnTrigger" style="padding: 20px; background: #ffc107; color: black;">📸 ABRIR CÁMARA</button>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -36,30 +44,31 @@
         var drawnItems = new L.FeatureGroup().addTo(map);
         new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
+        let currentLayer = null;
+
         map.on(L.Draw.Event.CREATED, function (e) {
-            var layer = e.layer;
-            layer.feature = { properties: { foto: null, fecha: new Date().toISOString() } };
-            drawnItems.addLayer(layer);
+            currentLayer = e.layer;
+            currentLayer.feature = { properties: { foto: null, fecha: new Date().toLocaleString() } };
+            drawnItems.addLayer(currentLayer);
             
-            layer.bindPopup(`
-                <div style="padding:10px">
-                    <p><b>Evidencia:</b></p>
-                    <input type="file" accept="image/*" capture="environment" onchange="procesarFoto(event, ${L.stamp(layer)})">
-                </div>
-            `).openPopup();
+            // Mostrar la capa transparente para tomar la foto
+            document.getElementById('photo-overlay').style.display = 'flex';
         });
 
-        function procesarFoto(event, id) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const layer = drawnItems.getLayer(id);
-                layer.feature.properties.foto = e.target.result;
-                alert("✅ Foto adjuntada al elemento.");
-            };
-            reader.readAsDataURL(file);
-        }
+        document.getElementById('btnTrigger').onclick = () => document.getElementById('cameraInput').click();
+
+        document.getElementById('cameraInput').onchange = function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    currentLayer.feature.properties.foto = event.target.result;
+                    document.getElementById('photo-overlay').style.display = 'none';
+                    alert("✅ Foto capturada y vinculada.");
+                };
+                reader.readAsDataURL(file);
+            }
+        };
 
         function descargarGeoJSON() {
             let features = [];
@@ -74,7 +83,7 @@
             const blob = new Blob([data], {type: "application/json"});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = "Electropuno_Inspeccion_" + new Date().getTime() + ".geojson";
+            a.download = "Electropuno_" + new Date().getTime() + ".geojson";
             a.click();
         }
     </script>
