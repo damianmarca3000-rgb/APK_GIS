@@ -8,11 +8,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
         body { margin:0; display: flex; font-family: sans-serif; }
-        #sidebar { width: 320px; padding: 15px; background: #f8f9fa; height: 100vh; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.2); }
+        #sidebar { width: 320px; padding: 15px; background: #f8f9fa; height: 100vh; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.2); z-index: 1000; }
         #map { flex: 1; height: 100vh; }
         .item { padding: 10px; border-bottom: 1px solid #ccc; cursor: pointer; display: flex; align-items: center; gap: 8px; background: white; margin-bottom: 5px; border-radius: 4px; }
-        .item:hover { background: #e9ecef; }
-        .highlight { border: 2px solid #28a745; }
         button { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; }
     </style>
 </head>
@@ -20,7 +18,7 @@
     <div id="sidebar">
         <h4>Trazos de Supervisión</h4>
         <div id="items-container"></div>
-        <button onclick="compartirSeleccionados()">📤 Exportar / Compartir</button>
+        <button onclick="descargarGeoJSON()">💾 Descargar GeoJSON</button>
     </div>
     <div id="map"></div>
 
@@ -37,12 +35,13 @@
         }).addTo(map);
 
         var drawnItems = new L.FeatureGroup().addTo(map);
+        map.addLayer(drawnItems);
+
         new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-        // Evento de creación
         map.on(L.Draw.Event.CREATED, function (e) {
             var layer = e.layer;
-            layer.feature = { properties: { nombre: "Nuevo Trazo", foto: null } };
+            layer.feature = { type: "Feature", properties: { nombre: "Trazo " + (drawnItems.getLayers().length + 1) } };
             drawnItems.addLayer(layer);
             actualizarSidebar();
         });
@@ -54,31 +53,12 @@
                 const id = L.stamp(layer);
                 const div = document.createElement('div');
                 div.className = 'item';
-                div.innerHTML = `
-                    <input type="checkbox" checked> 
-                    <span onclick="enfocar(${id})">${layer.feature.properties.nombre}</span>
-                    <button onclick="editarPropiedades(${id})" style="width: auto; padding: 2px 8px;">✎</button>
-                `;
+                div.innerHTML = `<span>${layer.feature.properties.nombre}</span>`;
                 container.appendChild(div);
             });
         }
 
-        function enfocar(id) {
-            const layer = drawnItems.getLayer(id);
-            if (layer.getBounds) map.fitBounds(layer.getBounds());
-            else map.setView(layer.getLatLng(), 18);
-        }
-
-        function editarPropiedades(id) {
-            const layer = drawnItems.getLayer(id);
-            const nombre = prompt("Nombre del trazo:", layer.feature.properties.nombre);
-            if (nombre) {
-                layer.feature.properties.nombre = nombre;
-                actualizarSidebar();
-            }
-        }
-
-        async function compartirSeleccionados() {
+        function descargarGeoJSON() {
             let features = [];
             drawnItems.eachLayer(layer => {
                 let geo = layer.toGeoJSON();
@@ -86,17 +66,23 @@
                 features.push(geo);
             });
 
-            const blob = new Blob([JSON.stringify({type: "FeatureCollection", features: features})], {type: "application/geo+json"});
-            const file = new File([blob], "inspeccion.geojson", {type: "application/geo+json"});
-
-            if (navigator.share && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: 'Datos Electropuno', text: 'Informe de campo' });
-            } else {
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = "inspeccion.geojson";
-                a.click();
+            if (features.length === 0) {
+                alert("No hay elementos para exportar.");
+                return;
             }
+
+            const data = JSON.stringify({type: "FeatureCollection", features: features});
+            const blob = new Blob([data], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            
+            // Forzar descarga de forma directa
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "inspeccion_campo.geojson";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
     </script>
 </body>
