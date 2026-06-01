@@ -3,29 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Móvil Pro</title>
+    <title>Electropuno App</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
-        body { margin:0; padding:0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
-        #map { flex: 1; width: 100%; }
-        #panel { background: #fff; padding: 10px; box-shadow: 0 -2px 5px rgba(0,0,0,0.2); z-index: 1000; }
-        button { width: 100%; padding: 15px; font-size: 16px; border: none; border-radius: 8px; background: #28a745; color: white; font-weight: bold; margin-bottom: 5px; }
-        .btn-loc { background: #007bff !important; }
+        body, html { margin:0; padding:0; height: 100%; overflow: hidden; font-family: sans-serif; }
+        #map { height: calc(100vh - 80px); width: 100%; }
+        #panel { height: 80px; display: flex; gap: 5px; padding: 5px; background: #eee; }
+        button { flex: 1; border: none; border-radius: 10px; font-weight: bold; color: white; }
+        .btn-loc { background: #007bff; }
+        .btn-exp { background: #28a745; }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div id="panel">
-        <button class="btn-loc" onclick="map.locate({setView: true, maxZoom: 18})">📍 IR A MI UBICACIÓN</button>
-        <button onclick="descargarGeoJSON()">💾 EXPORTAR DATOS</button>
+        <button class="btn-loc" onclick="map.locate({setView: true, maxZoom: 18})">📍 UBICAR</button>
+        <button class="btn-exp" onclick="descargarGeoJSON()">💾 EXPORTAR</button>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     
     <script>
-        var map = L.map('map').setView([-15.48, -70.13], 15);
+        var map = L.map('map', { tap: true }).setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
         L.tileLayer.wms("http://192.168.236.107/arcgis/services/Redes/MapServer/WmsServer", {
@@ -33,55 +34,49 @@
         }).addTo(map);
 
         var drawnItems = new L.FeatureGroup().addTo(map);
-        new L.Control.Draw({ 
-            edit: { featureGroup: drawnItems }, 
-            draw: { polygon: true, polyline: true, marker: true } 
-        }).addTo(map);
+        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-        // Al crear un elemento, abrir popup para foto
         map.on(L.Draw.Event.CREATED, function (e) {
             var layer = e.layer;
-            layer.feature = { properties: { foto: null } };
+            layer.feature = { properties: { foto: null, fecha: new Date().toISOString() } };
             drawnItems.addLayer(layer);
             
             layer.bindPopup(`
-                <div style="text-align:center">
-                    <p>Capturar evidencia:</p>
-                    <input type="file" accept="image/*" capture="environment" onchange="subirFoto(event, ${L.stamp(layer)})">
+                <div style="padding:10px">
+                    <p><b>Evidencia:</b></p>
+                    <input type="file" accept="image/*" capture="environment" onchange="procesarFoto(event, ${L.stamp(layer)})">
                 </div>
             `).openPopup();
         });
 
-        function subirFoto(event, id) {
+        function procesarFoto(event, id) {
             const file = event.target.files[0];
+            if (!file) return;
             const reader = new FileReader();
             reader.onload = function(e) {
                 const layer = drawnItems.getLayer(id);
-                layer.feature.properties.foto = e.target.result; // Guarda la imagen en base64
-                alert("Foto guardada correctamente.");
+                layer.feature.properties.foto = e.target.result;
+                alert("✅ Foto adjuntada al elemento.");
             };
             reader.readAsDataURL(file);
         }
 
         function descargarGeoJSON() {
             let features = [];
-            drawnItems.eachLayer(layer => {
-                let geo = layer.toGeoJSON();
-                geo.properties = layer.feature.properties; // Incluye la foto (base64)
-                features.push(geo);
+            drawnItems.eachLayer(l => {
+                let g = l.toGeoJSON();
+                g.properties = l.feature.properties;
+                features.push(g);
             });
-
-            if (features.length === 0) return alert("Nada que exportar.");
-
+            if (features.length === 0) return alert("Dibuja algo primero");
+            
             const data = JSON.stringify({type: "FeatureCollection", features: features});
             const blob = new Blob([data], {type: "application/json"});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = "inspeccion_" + new Date().getTime() + ".geojson";
+            a.download = "Electropuno_Inspeccion_" + new Date().getTime() + ".geojson";
             a.click();
         }
-
-        map.locate({setView: true, maxZoom: 17});
     </script>
 </body>
 </html>
