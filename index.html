@@ -12,24 +12,34 @@
     <style>
         body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
         #map { height: calc(100vh - 60px); width: 100%; }
-        #panel { height: 60px; display: flex; gap: 5px; padding: 10px; background: #333; align-items: center; }
-        button { padding: 10px; cursor: pointer; border: none; border-radius: 4px; }
+        #panel { height: 60px; display: flex; gap: 10px; padding: 10px; background: #333; align-items: center; }
+        button { padding: 8px; cursor: pointer; border: none; border-radius: 4px; }
+        #sidebar { position:fixed; top:60px; right:-260px; width:260px; height:calc(100% - 60px); background:white; z-index:999; transition:0.3s; padding:10px; box-shadow:-2px 0 5px #ccc; overflow-y: auto; }
         #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
         .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; }
         input { display:block; width:90%; margin:10px 0; padding:10px; }
-        #preview { width:100%; max-height:150px; display:none; }
+        #preview { width:100%; max-height:150px; display:none; margin-bottom:10px; }
+        .list-item { border-bottom:1px solid #ddd; padding:10px 0; display:flex; align-items:center; gap:10px; }
     </style>
 </head>
 <body>
 
     <div id="panel">
-        <button onclick="exportarTodo()" style="background-color: #28a745; color: white;">💾 EXPORTAR TODO (ZIP)</button>
+        <button onclick="exportarSeleccionados()" style="background-color: #28a745; color: white;">💾 EXPORTAR SELECCIÓN</button>
+        <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
     </div>
+    
     <div id="map"></div>
+
+    <div id="sidebar">
+        <h3>Gestionar Trazos</h3>
+        <button onclick="document.getElementById('sidebar').style.right = '-260px'" style="width:100%">CERRAR</button>
+        <div id="lista-trazos"></div>
+    </div>
 
     <div id="form-overlay">
         <div class="form-box">
-            <h3>Datos de Red</h3>
+            <h3>Detalles</h3>
             <input type="text" id="codRuta" placeholder="Código de Ruta">
             <input type="text" id="numSerie" placeholder="N° Serie">
             <input type="text" id="fases" placeholder="Fases (A,B,C)">
@@ -51,10 +61,18 @@
 
         map.on('draw:created', (e) => {
             activeLayer = e.layer;
-            fotoBase64 = "";
-            document.getElementById('preview').style.display = 'none';
+            limpiarFormulario();
             document.getElementById('form-overlay').style.display = 'flex';
         });
+
+        function limpiarFormulario(l = null) {
+            document.getElementById('codRuta').value = l?.myData?.codigo || "";
+            document.getElementById('numSerie').value = l?.myData?.serie || "";
+            document.getElementById('fases').value = l?.myData?.fases || "";
+            fotoBase64 = l?.myData?.foto || "";
+            document.getElementById('preview').src = fotoBase64;
+            document.getElementById('preview').style.display = fotoBase64 ? 'block' : 'none';
+        }
 
         function procesarImagen(e) {
             const file = e.target.files[0];
@@ -76,33 +94,58 @@
                 fotoNombre: "FOTO_" + (document.getElementById('codRuta').value || Date.now()) + ".jpg"
             };
             if(!drawnItems.hasLayer(activeLayer)) drawnItems.addLayer(activeLayer);
+            actualizarLista();
             document.getElementById('form-overlay').style.display = 'none';
         }
 
-        async function exportarTodo() {
+        function editarTrazo(id) {
+            activeLayer = drawnItems.getLayer(id);
+            limpiarFormulario(activeLayer);
+            document.getElementById('form-overlay').style.display = 'flex';
+        }
+
+        function actualizarLista() {
+            const container = document.getElementById('lista-trazos');
+            container.innerHTML = '';
+            drawnItems.eachLayer((l) => {
+                let id = L.stamp(l);
+                let div = document.createElement('div');
+                div.className = 'list-item';
+                div.innerHTML = `
+                    <input type="checkbox" class="export-check" value="${id}" checked>
+                    <span>${l.myData?.codigo || 'Trazo'}</span>
+                    <button onclick="editarTrazo(${id})">✏️</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function exportarSeleccionados() {
             const zip = new JSZip();
             const fecha = new Date().toISOString().slice(0,10);
             let csv = "Codigo,Serie,Fases,NombreArchivo\n";
             let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
+            
+            let seleccionados = document.querySelectorAll('.export-check:checked');
+            if(seleccionados.length === 0) { alert("Selecciona al menos un trazo"); return; }
 
-            drawnItems.eachLayer(l => {
-                if(l.myData) {
-                    let d = l.myData;
-                    csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
-                    let coords = l.getLatLng ? `${l.getLatLng().lng},${l.getLatLng().lat}` : `${l.getBounds().getCenter().lng},${l.getBounds().getCenter().lat}`;
-                    kml += `<Placemark><name>${d.codigo}</name><Point><coordinates>${coords}</coordinates></Point></Placemark>`;
-                    if(d.foto) zip.file(d.fotoNombre, d.foto.split(',')[1], {base64: true});
-                }
+            seleccionados.forEach(chk => {
+                let l = drawnItems.getLayer(chk.value);
+                let d = l.myData;
+                csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
+                let coords = l.getLatLng ? `${l.getLatLng().lng},${l.getLatLng().lat}` : `${l.getBounds().getCenter().lng},${l.getBounds().getCenter().lat}`;
+                kml += `<Placemark><name>${d.codigo}</name><Point><coordinates>${coords}</coordinates></Point></Placemark>`;
+                if(d.foto) zip.file(d.fotoNombre, d.foto.split(',')[1], {base64: true});
             });
 
             kml += `</Document></kml>`;
-            zip.file(`Electropuno_${fecha}.csv`, csv);
-            zip.file(`Electropuno_${fecha}.kml`, kml);
+            zip.file(`Seleccion_${fecha}.csv`, csv);
+            zip.file(`Seleccion_${fecha}.kml`, kml);
 
             const content = await zip.generateAsync({type:"blob"});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(content);
-            a.download = `Electropuno_Datos_${fecha}.zip`;
+            a.download = `Electropuno_Seleccion_${fecha}.zip`;
             a.click();
         }
     </script>
