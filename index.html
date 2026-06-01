@@ -2,40 +2,30 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Electropuno Pro - Captura GIS</title>
+    <title>Electropuno Pro - Captura GIS UTM</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
     <style>
         body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
         #map { height: calc(100vh - 60px); width: 100%; }
-        #panel { height: 60px; display: flex; gap: 10px; padding: 10px; background: #333; align-items: center; }
-        button { padding: 8px; cursor: pointer; border: none; border-radius: 4px; }
-        #sidebar { position:fixed; top:60px; right:-260px; width:260px; height:calc(100% - 60px); background:white; z-index:999; transition:0.3s; padding:10px; box-shadow:-2px 0 5px #ccc; overflow-y: auto; }
-        #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; }
+        #panel { height: 60px; display: flex; gap: 10px; padding: 10px; background: #333; align-items: center; color: white;}
+        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:350px; }
+        #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; overflow-y:auto; }
         input { display:block; width:90%; margin:10px 0; padding:10px; }
-        #preview { width:100%; max-height:150px; display:none; margin-bottom:10px; }
-        .list-item { border-bottom:1px solid #ddd; padding:10px 0; display:flex; align-items:center; gap:10px; }
+        #preview-container { display:flex; gap:5px; margin-top:10px; }
     </style>
 </head>
 <body>
 
     <div id="panel">
-        <button onclick="exportarSeleccionados()" style="background-color: #28a745; color: white;">💾 EXPORTAR SELECCIÓN</button>
-        <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
+        <button onclick="exportarSeleccionados()" style="background:#28a745; color:white; padding:10px;">💾 EXPORTAR ZIP</button>
+        <span>Electropuno GIS (UTM Zona 19S)</span>
     </div>
-    
     <div id="map"></div>
-
-    <div id="sidebar">
-        <h3>Gestionar Trazos</h3>
-        <button onclick="document.getElementById('sidebar').style.right = '-260px'" style="width:100%">CERRAR</button>
-        <div id="lista-trazos"></div>
-    </div>
 
     <div id="form-overlay">
         <div class="form-box">
@@ -43,126 +33,103 @@
             <input type="text" id="codRuta" placeholder="Código de Ruta">
             <input type="text" id="numSerie" placeholder="N° Serie">
             <input type="text" id="fases" placeholder="Fases (A,B,C)">
-            <button onclick="document.getElementById('camaraInput').click()">📸 TOMAR FOTO</button>
-            <input type="file" id="camaraInput" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(event)">
-            <img id="preview" src="" alt="Foto">
-            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; background:#007bff; color:white;">GUARDAR</button>
+            <button onclick="document.getElementById('camaraInput').click()" style="width:100%">📸 TOMAR FOTOS</button>
+            <input type="file" id="camaraInput" accept="image/*" capture="environment" multiple style="display:none" onchange="procesarImagenes(event)">
+            <div id="preview-container"></div>
+            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; background:#007bff; color:white; padding:10px;">GUARDAR DATOS</button>
         </div>
     </div>
 
     <script>
+        // Definición de Zona UTM 19S para Puno
+        proj4.defs("EPSG:32719","+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs");
+
         var map = L.map('map').setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         var drawnItems = new L.FeatureGroup().addTo(map);
         map.addLayer(drawnItems);
         new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-        let activeLayer, fotoBase64 = "";
+        let activeLayer, fotosArray = [];
 
-        map.on('draw:created', (e) => {
-            activeLayer = e.layer;
-            limpiarFormulario();
-            document.getElementById('form-overlay').style.display = 'flex';
-        });
-
-        function limpiarFormulario(l = null) {
-            document.getElementById('codRuta').value = l?.myData?.codigo || "";
-            document.getElementById('numSerie').value = l?.myData?.serie || "";
-            document.getElementById('fases').value = l?.myData?.fases || "";
-            fotoBase64 = l?.myData?.foto || "";
-            document.getElementById('preview').src = fotoBase64;
-            document.getElementById('preview').style.display = fotoBase64 ? 'block' : 'none';
+        function obtenerUTM() {
+            return new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        // Convertir Lat/Lon a UTM
+                        let utm = proj4("EPSG:4326", "EPSG:32719", [pos.coords.longitude, pos.coords.latitude]);
+                        resolve({e: utm[0].toFixed(2), n: utm[1].toFixed(2)});
+                    },
+                    () => resolve({e: 0, n: 0})
+                );
+            });
         }
 
-        function procesarImagen(e) {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                fotoBase64 = ev.target.result;
-                document.getElementById('preview').src = fotoBase64;
-                document.getElementById('preview').style.display = 'block';
-            };
-            reader.readAsDataURL(file);
+        async function procesarImagenes(e) {
+            const files = Array.from(e.target.files).slice(0, 3);
+            const utm = await obtenerUTM();
+            const container = document.getElementById('preview-container');
+            container.innerHTML = '';
+            fotosArray = [];
+
+            for (const file of files) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width; canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        ctx.font = "bold 80px Arial"; ctx.fillStyle = "red";
+                        ctx.fillText(`E:${utm.e} N:${utm.n}`, 100, 150);
+                        
+                        const b64 = canvas.toDataURL('image/jpeg');
+                        fotosArray.push(b64);
+                        const prev = document.createElement('img');
+                        prev.src = b64; prev.style.width = "80px";
+                        container.appendChild(prev);
+                    };
+                    img.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
         }
 
-        function guardarDatos() {
+        async function guardarDatos() {
+            const utm = await obtenerUTM();
             activeLayer.myData = {
-                codigo: document.getElementById('codRuta').value || 'SinCodigo',
-                serie: document.getElementById('numSerie').value || 'S/N',
-                fases: document.getElementById('fases').value || 'N/A',
-                foto: fotoBase64,
-                fotoNombre: "FOTO_" + (document.getElementById('codRuta').value || Date.now()) + ".jpg"
+                codigo: document.getElementById('codRuta').value,
+                serie: document.getElementById('numSerie').value || 'SN',
+                fases: document.getElementById('fases').value,
+                fecha: new Date().toLocaleString(),
+                e: utm.e, n: utm.n,
+                fotos: fotosArray
             };
             if(!drawnItems.hasLayer(activeLayer)) drawnItems.addLayer(activeLayer);
-            actualizarLista();
             document.getElementById('form-overlay').style.display = 'none';
-        }
-
-        function editarTrazo(id) {
-            activeLayer = drawnItems.getLayer(id);
-            limpiarFormulario(activeLayer);
-            document.getElementById('form-overlay').style.display = 'flex';
-        }
-
-        function actualizarLista() {
-            const container = document.getElementById('lista-trazos');
-            container.innerHTML = '';
-            drawnItems.eachLayer((l) => {
-                let id = L.stamp(l);
-                let div = document.createElement('div');
-                div.className = 'list-item';
-                div.innerHTML = `
-                    <input type="checkbox" class="export-check" value="${id}" checked>
-                    <span>${l.myData?.codigo || 'Trazo'}</span>
-                    <button onclick="editarTrazo(${id})">✏️</button>
-                `;
-                container.appendChild(div);
-            });
         }
 
         async function exportarSeleccionados() {
             const zip = new JSZip();
-            const fecha = new Date().toISOString().slice(0,10);
-            let csv = "Codigo,Serie,Fases,NombreArchivo\n";
-            let kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-<Document>
-    <Style id="style"><LineStyle><color>ff0000ff</color><width>3</width></LineStyle><PolyStyle><color>7f0000ff</color></PolyStyle></Style>`;
+            let csv = "Codigo,Serie,Fases,Fecha,Este,Norte,NombreArchivo\n";
             
-            let seleccionados = document.querySelectorAll('.export-check:checked');
-            if(seleccionados.length === 0) { alert("Selecciona al menos un trazo"); return; }
-
-            seleccionados.forEach(chk => {
-                let l = drawnItems.getLayer(chk.value);
+            drawnItems.eachLayer((l) => {
                 let d = l.myData;
-                csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
+                if (!d) return;
 
-                kml += `<Placemark><name>${d.codigo}</name><styleUrl>#style</styleUrl>`;
-                if (l instanceof L.Polygon) {
-                    kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`;
-                    let coords = l.getLatLngs()[0];
-                    coords.forEach(p => kml += `${p.lng},${p.lat},0 `);
-                    kml += `${coords[0].lng},${coords[0].lat},0`;
-                    kml += `</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
-                } else if (l instanceof L.Polyline) {
-                    kml += `<LineString><coordinates>`;
-                    l.getLatLngs().forEach(p => kml += `${p.lng},${p.lat},0 `);
-                    kml += `</coordinates></LineString>`;
-                } else {
-                    kml += `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates></Point>`;
-                }
-                kml += `</Placemark>`;
-                if(d.foto) zip.file(d.fotoNombre, d.foto.split(',')[1], {base64: true});
+                d.fotos.forEach((f, i) => {
+                    let nombre = `${d.serie}_E${d.e}_N${d.n}_${i+1}.jpg`;
+                    zip.file(nombre, f.split(',')[1], {base64: true});
+                    csv += `${d.codigo},${d.serie},${d.fases},${d.fecha},${d.e},${d.n},${nombre}\n`;
+                });
             });
 
-            kml += `</Document></kml>`;
-            zip.file(`Datos_${fecha}.csv`, csv);
-            zip.file(`Datos_${fecha}.kml`, kml);
-
+            zip.file("Reporte_Electropuno.csv", csv);
             const content = await zip.generateAsync({type:"blob"});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(content);
-            a.download = `Electropuno_GIS_${fecha}.zip`;
+            a.download = "Captura_GIS_UTM.zip";
             a.click();
         }
     </script>
