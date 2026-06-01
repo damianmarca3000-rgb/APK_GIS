@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Pro - KML Oficial</title>
+    <title>Electropuno Pro - KML</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
@@ -54,8 +54,11 @@
 
         function descargarKML() {
             let placemarks = "";
+            let count = 0;
+            
             drawnItems.eachLayer(l => {
-                let img = l.feature?.properties?.foto || "";
+                // Accedemos a la propiedad foto guardada en el objeto layer directamente
+                let img = l.myData?.foto || ""; 
                 let geometryTag = "";
 
                 if (l instanceof L.Marker) {
@@ -63,44 +66,36 @@
                     geometryTag = `<Point><coordinates>${ll.lng},${ll.lat},0</coordinates></Point>`;
                 } else if (l instanceof L.Polyline || l instanceof L.Polygon) {
                     let latlngs = l.getLatLngs();
+                    // Manejo correcto de coordenadas para KML
                     let coords = (l instanceof L.Polygon ? latlngs[0] : latlngs).map(p => `${p.lng},${p.lat},0`).join(" ");
-                    geometryTag = l instanceof L.Polygon 
+                    geometryTag = (l instanceof L.Polygon) 
                         ? `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coords}</coordinates></LinearRing></outerBoundaryIs></Polygon>`
                         : `<LineString><coordinates>${coords}</coordinates></LineString>`;
                 }
 
                 placemarks += `<Placemark><description><![CDATA[<img src="${img}" width="300px" />]]></description>${geometryTag}</Placemark>`;
+                count++;
             });
+
+            if(count === 0) return alert("No hay trazos dibujados.");
 
             const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+            
             const blob = new Blob([kml], {type: "application/vnd.google-earth.kml+xml"});
+            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
+            a.href = url;
             a.download = "inspeccion_" + new Date().getTime() + ".kml";
+            document.body.appendChild(a);
             a.click();
-        }
-
-        function toggleSidebar() { 
-            const sb = document.getElementById('sidebar');
-            sb.classList.toggle('active'); 
-            if(sb.classList.contains('active')) actualizarLista(); 
-        }
-        
-        function actualizarLista() {
-            const container = document.getElementById('list-container');
-            container.innerHTML = '';
-            drawnItems.eachLayer((layer) => {
-                const div = document.createElement('div');
-                div.className = 'list-item';
-                div.innerHTML = `Trazo ${L.stamp(layer)}`;
-                div.onclick = () => { map.fitBounds(layer.getBounds ? layer.getBounds() : L.latLngBounds(layer.getLatLng(), layer.getLatLng())); toggleSidebar(); };
-                container.appendChild(div);
-            });
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
         map.on(L.Draw.Event.CREATED, function (e) {
             currentLayer = e.layer;
-            currentLayer.feature = { properties: { foto: null, fecha: new Date().toLocaleString() } };
+            // Guardamos los datos en una propiedad personalizada del objeto layer
+            currentLayer.myData = { foto: null, fecha: new Date().toLocaleString() };
             drawnItems.addLayer(currentLayer);
             document.getElementById('photo-overlay').style.display = 'flex';
         });
@@ -112,13 +107,31 @@
             if (file) {
                 const reader = new FileReader();
                 reader.onload = function(event) {
-                    currentLayer.feature.properties.foto = event.target.result;
+                    currentLayer.myData.foto = event.target.result;
                     document.getElementById('photo-overlay').style.display = 'none';
-                    alert("✅ Foto guardada.");
+                    alert("✅ Foto guardada exitosamente.");
                 };
                 reader.readAsDataURL(file);
             }
         };
+
+        function toggleSidebar() { 
+            const sb = document.getElementById('sidebar');
+            sb.classList.toggle('active'); 
+            if(sb.classList.contains('active')) actualizarLista(); 
+        }
+
+        function actualizarLista() {
+            const container = document.getElementById('list-container');
+            container.innerHTML = '';
+            drawnItems.eachLayer((layer) => {
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                div.innerHTML = `Trazo creado a las ${layer.myData?.fecha || 'N/A'}`;
+                div.onclick = () => { map.fitBounds(layer.getBounds ? layer.getBounds() : L.latLngBounds(layer.getLatLng(), layer.getLatLng())); toggleSidebar(); };
+                container.appendChild(div);
+            });
+        }
     </script>
 </body>
 </html>
