@@ -3,24 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Pro</title>
+    <title>Electropuno Pro - KML</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
         body, html { margin:0; padding:0; height: 100%; overflow: hidden; font-family: sans-serif; }
         #map { height: calc(100vh - 80px); width: 100%; }
         #panel { height: 80px; display: flex; gap: 5px; padding: 5px; background: #eee; z-index: 1000; }
-        button { flex: 1; border: none; border-radius: 10px; font-weight: bold; color: white; cursor: pointer; }
+        button { flex: 1; border: none; border-radius: 10px; font-weight: bold; color: white; cursor: pointer; font-size: 12px; }
         .btn-loc { background: #007bff; }
-        .btn-exp { background: #28a745; }
+        .btn-kml { background: #dc3545; }
         .btn-list { background: #6c757d; }
         
         #photo-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; color: white; flex-direction: column; }
-        
-        /* Corrección de visibilidad del sidebar */
         #sidebar { position: fixed; top: 0; right: -250px; width: 250px; height: 100%; background: white; z-index: 3000; box-shadow: -2px 0 5px rgba(0,0,0,0.3); padding: 20px; overflow-y: auto; transition: right 0.3s ease; }
         #sidebar.active { right: 0; }
-        .list-item { padding: 15px; border-bottom: 1px solid #ccc; cursor: pointer; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -28,12 +25,12 @@
     <div id="panel">
         <button class="btn-list" onclick="toggleSidebar()">📋 LISTA</button>
         <button class="btn-loc" onclick="map.locate({setView: true, maxZoom: 18})">📍 UBICAR</button>
-        <button class="btn-exp" onclick="descargarGeoJSON()">💾 EXP</button>
+        <button class="btn-kml" onclick="descargarKML()">💾 KML (PARA ARCMAP)</button>
     </div>
 
     <div id="sidebar">
-        <h3>Trazos Registrados</h3>
-        <button onclick="toggleSidebar()" style="background:red; padding: 10px;">Cerrar Lista</button>
+        <h3>Trazos</h3>
+        <button onclick="toggleSidebar()" style="background:red; width:100%; padding:10px;">Cerrar</button>
         <div id="list-container"></div>
     </div>
 
@@ -50,41 +47,62 @@
         var map = L.map('map', { tap: true }).setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        L.tileLayer.wms("http://192.168.236.107/arcgis/services/Redes/MapServer/WmsServer", {
-            layers: '0', format: 'image/png', transparent: true
-        }).addTo(map);
-
         var drawnItems = new L.FeatureGroup().addTo(map);
         new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
         let currentLayer = null;
 
-        function toggleSidebar() {
-            const sb = document.getElementById('sidebar');
-            sb.classList.toggle('active');
-            if(sb.classList.contains('active')) actualizarLista();
+        // Función para generar KML compatible con ArcMap
+        function descargarKML() {
+            let placemarks = "";
+            drawnItems.eachLayer(l => {
+                let img = l.feature.properties.foto || "";
+                let coords = "";
+                
+                // Extraer coordenadas según sea polígono, línea o punto
+                if(l.getLatLng) { 
+                    coords = `${l.getLatLng().lng},${l.getLatLng().lat}`;
+                } else if(l.getLatLngs) {
+                    coords = l.getLatLngs()[0].map(p => `${p.lng},${p.lat}`).join(" ");
+                }
+
+                placemarks += `
+                <Placemark>
+                    <description><![CDATA[<img src="${img}" width="300px" />]]></description>
+                    <Point><coordinates>${coords}</coordinates></Point>
+                </Placemark>`;
+            });
+
+            const kml = `<?xml version="1.0" encoding="UTF-8"?>
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+                <Document>${placemarks}</Document>
+            </kml>`;
+
+            const blob = new Blob([kml], {type: "application/vnd.google-earth.kml+xml"});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = "inspeccion_electropuno.kml";
+            a.click();
         }
 
+        // --- Resto de funciones (toggleSidebar, procesarFoto, etc) igual al código anterior ---
+        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('active'); if(document.getElementById('sidebar').classList.contains('active')) actualizarLista(); }
+        
         function actualizarLista() {
             const container = document.getElementById('list-container');
             container.innerHTML = '';
             drawnItems.eachLayer((layer) => {
-                const id = L.stamp(layer);
-                const fecha = layer.feature && layer.feature.properties ? layer.feature.properties.fecha : "N/A";
                 const div = document.createElement('div');
                 div.className = 'list-item';
-                div.innerHTML = `Trazo ${id} <br><small>${fecha}</small>`;
-                div.onclick = () => {
-                    map.fitBounds(layer.getBounds ? layer.getBounds() : L.latLngBounds(layer.getLatLng(), layer.getLatLng()));
-                    toggleSidebar();
-                };
+                div.innerHTML = `Trazo ${L.stamp(layer)}`;
+                div.onclick = () => { map.fitBounds(layer.getBounds ? layer.getBounds() : L.latLngBounds(layer.getLatLng(), layer.getLatLng())); toggleSidebar(); };
                 container.appendChild(div);
             });
         }
 
         map.on(L.Draw.Event.CREATED, function (e) {
             currentLayer = e.layer;
-            currentLayer.feature = { properties: { foto: null, fecha: new Date().toLocaleTimeString() } };
+            currentLayer.feature = { properties: { foto: null, fecha: new Date().toLocaleString() } };
             drawnItems.addLayer(currentLayer);
             document.getElementById('photo-overlay').style.display = 'flex';
         });
@@ -103,22 +121,6 @@
                 reader.readAsDataURL(file);
             }
         };
-
-        function descargarGeoJSON() {
-            let features = [];
-            drawnItems.eachLayer(l => {
-                let g = l.toGeoJSON();
-                g.properties = l.feature.properties;
-                features.push(g);
-            });
-            if (features.length === 0) return alert("Dibuja algo primero");
-            const data = JSON.stringify({type: "FeatureCollection", features: features});
-            const blob = new Blob([data], {type: "application/json"});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = "Electropuno_" + new Date().getTime() + ".geojson";
-            a.click();
-        }
     </script>
 </body>
 </html>
