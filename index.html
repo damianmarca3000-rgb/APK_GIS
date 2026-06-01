@@ -12,9 +12,9 @@
         #panel { height: 60px; display: flex; gap: 5px; padding: 5px; background: #eee; align-items: center; }
         #sidebar { position:fixed; top:60px; right:-260px; width:260px; height:100%; background:white; z-index:999; transition:0.3s; padding:10px; box-shadow:-2px 0 5px #ccc; overflow-y: auto; }
         #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; }
+        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; max-height:80vh; overflow-y:auto; }
         input { display:block; width:90%; margin:10px 0; padding:10px; }
-        .list-item { border-bottom:1px solid #ddd; padding:10px 0; display:flex; justify-content:space-between; }
+        #preview { width:100px; height:100px; object-fit:cover; margin-top:10px; display:none; }
     </style>
 </head>
 <body>
@@ -34,15 +34,15 @@
 
     <div id="form-overlay">
         <div class="form-box">
-            <h3 id="form-title">Detalles del Trazo</h3>
+            <h3>Detalles</h3>
             <input type="text" id="codRuta" placeholder="Código de Ruta">
             <input type="text" id="numSerie" placeholder="N° Serie">
             <input type="text" id="fases" placeholder="Fases (A,B,C)">
-            <button onclick="guardarDatos()">GUARDAR</button>
+            <input type="file" id="fotoInput" accept="image/*" onchange="previewFoto(event)">
+            <img id="preview" src="" alt="Foto">
+            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; padding:10px;">GUARDAR</button>
         </div>
     </div>
-
-    <input type="file" id="importInput" accept=".kml,.kmz" style="display:none">
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
@@ -52,14 +52,9 @@
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         var drawnItems = new L.FeatureGroup().addTo(map);
         map.addLayer(drawnItems);
-        
-        // Habilitar edición y dibujo
-        var drawControl = new L.Control.Draw({ 
-            edit: { featureGroup: drawnItems }, 
-            draw: { polygon: true, polyline: true, marker: true } 
-        }).addTo(map);
+        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-        let activeLayer;
+        let activeLayer, fotoBase64 = "";
 
         map.on('draw:created', (e) => {
             activeLayer = e.layer;
@@ -67,17 +62,31 @@
             document.getElementById('form-overlay').style.display = 'flex';
         });
 
+        function previewFoto(e) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                fotoBase64 = event.target.result;
+                document.getElementById('preview').src = fotoBase64;
+                document.getElementById('preview').style.display = 'block';
+            };
+            reader.readAsDataURL(e.target.files[0]);
+        }
+
         function limpiarFormulario() {
             document.getElementById('codRuta').value = activeLayer.myData?.codigo || "";
             document.getElementById('numSerie').value = activeLayer.myData?.serie || "";
             document.getElementById('fases').value = activeLayer.myData?.fases || "";
+            fotoBase64 = activeLayer.myData?.foto || "";
+            document.getElementById('preview').src = fotoBase64;
+            document.getElementById('preview').style.display = fotoBase64 ? 'block' : 'none';
         }
 
         function guardarDatos() {
             activeLayer.myData = {
                 codigo: document.getElementById('codRuta').value,
                 serie: document.getElementById('numSerie').value,
-                fases: document.getElementById('fases').value
+                fases: document.getElementById('fases').value,
+                foto: fotoBase64
             };
             if(!drawnItems.hasLayer(activeLayer)) drawnItems.addLayer(activeLayer);
             actualizarLista();
@@ -90,13 +99,8 @@
             drawnItems.eachLayer((layer) => {
                 let div = document.createElement('div');
                 div.className = 'list-item';
-                div.innerHTML = `
-                    <span>${layer.myData?.codigo || 'Sin nombre'}</span>
-                    <div>
-                        <button onclick="editarTrazo(${L.stamp(layer)})">✏️</button>
-                        <button onclick="enfocar(${L.stamp(layer)})">📍</button>
-                    </div>
-                `;
+                div.innerHTML = `<span>${layer.myData?.codigo || 'Sin nombre'}</span>
+                                 <button onclick="editarTrazo(${L.stamp(layer)})">✏️</button>`;
                 container.appendChild(div);
             });
         }
@@ -107,13 +111,29 @@
             document.getElementById('form-overlay').style.display = 'flex';
         }
 
-        function enfocar(id) {
-            let layer = drawnItems.getLayer(id);
-            map.fitBounds(layer.getBounds ? layer.getBounds() : L.latLngBounds(layer.getLatLng(), layer.getLatLng()));
-            document.getElementById('sidebar').style.right = '-260px';
+        // Exportación incluyendo la foto en el CDATA para ArcMap/Google Earth
+        function descargarKML() {
+            let placemarks = "";
+            drawnItems.eachLayer(l => {
+                let d = l.myData || {codigo:'N/A', serie:'N/A', fases:'N/A', foto:''};
+                let geom = (l instanceof L.Marker) ? `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates></Point>` : 
+                           (l instanceof L.Polygon) ? `<Polygon><outerBoundaryIs><LinearRing><coordinates>${l.getLatLngs()[0].map(p => p.lng+','+p.lat+',0').join(" ")}</coordinates></LinearRing></outerBoundaryIs></Polygon>` :
+                           `<LineString><coordinates>${l.getLatLngs().map(p => p.lng+','+p.lat+',0').join(" ")}</coordinates></LineString>`;
+                
+                placemarks += `<Placemark>
+                    <ExtendedData>
+                        <Data name="Ruta"><value>${d.codigo}</value></Data>
+                        <Data name="Serie"><value>${d.serie}</value></Data>
+                        <Data name="Fases"><value>${d.fases}</value></Data>
+                        <Data name="Foto"><value><![CDATA[<img src="${d.foto}" width="200" />]]></value></Data>
+                    </ExtendedData>${geom}</Placemark>`;
+            });
+            const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([kml], {type: "application/vnd.google-earth.kml+xml"}));
+            a.download = "inspeccion_" + Date.now() + ".kml";
+            a.click();
         }
-
-        function descargarKML() { /* Misma función de exportación anterior */ }
     </script>
 </body>
 </html>
