@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visor de Supervisión Electropuno</title>
+    <title>Visor de Campo Electropuno</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
         body, #map { height: 100vh; width: 100vw; margin: 0; }
-        .btn-container { position: absolute; bottom: 30px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
-        button { padding: 15px; font-size: 14px; background: white; border: 1px solid #333; border-radius: 8px; cursor: pointer; }
+        .controls { position: absolute; bottom: 20px; left: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 5px; }
+        button { padding: 12px; background: white; border: 1px solid #444; border-radius: 5px; cursor: pointer; }
     </style>
 </head>
 <body>
     <div id="map"></div>
-    <div class="btn-container">
-        <button onclick="map.locate({setView: true})">📍 Ir a mi ubicación</button>
-        <button onclick="descargarData()">💾 Exportar datos (GeoJSON)</button>
+    <div class="controls">
+        <button onclick="irAUbicacion()">📍 Mi Ubicación</button>
+        <button onclick="descargarData()">💾 Exportar GeoJSON</button>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -29,28 +29,40 @@
         var drawnItems = new L.FeatureGroup();
         map.addLayer(drawnItems);
         
-        // Controles de dibujo en español
-        new L.Control.Draw({ 
-            edit: { featureGroup: drawnItems }, 
-            draw: { 
-                polygon: { title: 'Dibujar un polígono' },
-                polyline: { title: 'Dibujar una línea' },
-                marker: { title: 'Añadir marcador' }
-            } 
-        }).addTo(map);
+        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true } }).addTo(map);
 
-        map.on(L.Draw.Event.CREATED, function (e) {
-            drawnItems.addLayer(e.layer);
+        // 1. Geolocalización GPS
+        function irAUbicacion() {
+            map.locate({setView: true, maxZoom: 18});
+        }
+        map.on('locationfound', function(e) {
+            L.marker(e.latlng).addTo(map).bindPopup("¡Estás aquí!").openPopup();
         });
+
+        // 2. Ventana emergente (Popup) al terminar de dibujar
+        map.on(L.Draw.Event.CREATED, function (e) {
+            var layer = e.layer;
+            var popupContent = `
+                <div>
+                    <h4>Editar Inspección</h4>
+                    <input type="text" id="nota" placeholder="Nota del tramo"><br><br>
+                    <input type="file" accept="image/*" capture="environment"><br><br>
+                    <button onclick="guardarInfo()">Guardar Datos</button>
+                </div>
+            `;
+            layer.bindPopup(popupContent).openPopup();
+            drawnItems.addLayer(layer);
+        });
+
+        function guardarInfo() { alert("Datos guardados temporalmente en memoria."); }
 
         function descargarData() {
             var data = JSON.stringify(drawnItems.toGeoJSON());
             var blob = new Blob([data], {type: "application/json"});
             var a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = "inspeccion_juliaca.geojson";
+            a.download = "inspeccion_campo.geojson";
             a.click();
-            alert("Archivo listo para importar en ArcMap");
         }
     </script>
 </body>
