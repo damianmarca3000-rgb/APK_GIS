@@ -23,10 +23,10 @@
 <body>
 
     <div id="panel">
-        <button onclick="exportarSeleccionados()" style="background:#28a745; color:white; border:none; padding:10px;">💾 EXPORTAR ZIP</button>
-        <span>Electropuno GIS - Gestión de Activos</span>
+        <button onclick="exportarSeleccionados()" style="background:#28a745; color:white; border:none; padding:10px;">💾 EXPORTAR ZIP (KML+CSV+FOTOS)</button>
+        <span>Electropuno GIS</span>
     </div>
-    <div id="lista-registros" id="lista"></div>
+    <div id="lista-registros"></div>
     <div id="map"></div>
 
     <div id="form-overlay">
@@ -121,17 +121,38 @@
         async function exportarSeleccionados() {
             const zip = new JSZip();
             let csv = "Codigo,Serie,Fases,Fecha,NombreArchivo\n";
+            let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
             const etiquetas = ["CODIGO", "SERIE", "PANORAMICA"];
+            
             drawnItems.eachLayer((l) => {
                 let d = l.myData;
                 if (!d) return;
+
+                // Agregar al KML
+                kml += `<Placemark><name>${d.serie}</name>`;
+                if (l instanceof L.Polygon) {
+                    kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`;
+                    l.getLatLngs()[0].forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+                } else if (l instanceof L.Polyline) {
+                    kml += `<LineString><coordinates>`;
+                    l.getLatLngs().forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `</coordinates></LineString>`;
+                }
+                kml += `</Placemark>`;
+
+                // Agregar Fotos y CSV
                 d.fotos.forEach((f, i) => {
                     let nombre = `${d.serie}_${etiquetas[i]}.jpg`;
                     zip.file(nombre, f.split(',')[1], {base64: true});
                     csv += `${d.codigo},${d.serie},${d.fases},${d.fecha},${nombre}\n`;
                 });
             });
+
+            kml += `</Document></kml>`;
+            zip.file("Reporte.kml", kml);
             zip.file("Reporte.csv", csv);
+            
             const content = await zip.generateAsync({type:"blob"});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(content);
