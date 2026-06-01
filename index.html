@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Pro - KML</title>
+    <title>Electropuno Pro - KML Oficial</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
@@ -14,10 +14,10 @@
         .btn-loc { background: #007bff; }
         .btn-kml { background: #dc3545; }
         .btn-list { background: #6c757d; }
-        
         #photo-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; color: white; flex-direction: column; }
         #sidebar { position: fixed; top: 0; right: -250px; width: 250px; height: 100%; background: white; z-index: 3000; box-shadow: -2px 0 5px rgba(0,0,0,0.3); padding: 20px; overflow-y: auto; transition: right 0.3s ease; }
         #sidebar.active { right: 0; }
+        .list-item { padding: 15px; border-bottom: 1px solid #ccc; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -25,11 +25,11 @@
     <div id="panel">
         <button class="btn-list" onclick="toggleSidebar()">📋 LISTA</button>
         <button class="btn-loc" onclick="map.locate({setView: true, maxZoom: 18})">📍 UBICAR</button>
-        <button class="btn-kml" onclick="descargarKML()">💾 KML (PARA ARCMAP)</button>
+        <button class="btn-kml" onclick="descargarKML()">💾 EXPORTAR KML</button>
     </div>
 
     <div id="sidebar">
-        <h3>Trazos</h3>
+        <h3>Trazos Registrados</h3>
         <button onclick="toggleSidebar()" style="background:red; width:100%; padding:10px;">Cerrar</button>
         <div id="list-container"></div>
     </div>
@@ -52,41 +52,39 @@
 
         let currentLayer = null;
 
-        // Función para generar KML compatible con ArcMap
         function descargarKML() {
             let placemarks = "";
             drawnItems.eachLayer(l => {
-                let img = l.feature.properties.foto || "";
-                let coords = "";
-                
-                // Extraer coordenadas según sea polígono, línea o punto
-                if(l.getLatLng) { 
-                    coords = `${l.getLatLng().lng},${l.getLatLng().lat}`;
-                } else if(l.getLatLngs) {
-                    coords = l.getLatLngs()[0].map(p => `${p.lng},${p.lat}`).join(" ");
+                let img = l.feature?.properties?.foto || "";
+                let geometryTag = "";
+
+                if (l instanceof L.Marker) {
+                    let ll = l.getLatLng();
+                    geometryTag = `<Point><coordinates>${ll.lng},${ll.lat},0</coordinates></Point>`;
+                } else if (l instanceof L.Polyline || l instanceof L.Polygon) {
+                    let latlngs = l.getLatLngs();
+                    let coords = (l instanceof L.Polygon ? latlngs[0] : latlngs).map(p => `${p.lng},${p.lat},0`).join(" ");
+                    geometryTag = l instanceof L.Polygon 
+                        ? `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coords}</coordinates></LinearRing></outerBoundaryIs></Polygon>`
+                        : `<LineString><coordinates>${coords}</coordinates></LineString>`;
                 }
 
-                placemarks += `
-                <Placemark>
-                    <description><![CDATA[<img src="${img}" width="300px" />]]></description>
-                    <Point><coordinates>${coords}</coordinates></Point>
-                </Placemark>`;
+                placemarks += `<Placemark><description><![CDATA[<img src="${img}" width="300px" />]]></description>${geometryTag}</Placemark>`;
             });
 
-            const kml = `<?xml version="1.0" encoding="UTF-8"?>
-            <kml xmlns="http://www.opengis.net/kml/2.2">
-                <Document>${placemarks}</Document>
-            </kml>`;
-
+            const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
             const blob = new Blob([kml], {type: "application/vnd.google-earth.kml+xml"});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = "inspeccion_electropuno.kml";
+            a.download = "inspeccion_" + new Date().getTime() + ".kml";
             a.click();
         }
 
-        // --- Resto de funciones (toggleSidebar, procesarFoto, etc) igual al código anterior ---
-        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('active'); if(document.getElementById('sidebar').classList.contains('active')) actualizarLista(); }
+        function toggleSidebar() { 
+            const sb = document.getElementById('sidebar');
+            sb.classList.toggle('active'); 
+            if(sb.classList.contains('active')) actualizarLista(); 
+        }
         
         function actualizarLista() {
             const container = document.getElementById('list-container');
@@ -116,7 +114,7 @@
                 reader.onload = function(event) {
                     currentLayer.feature.properties.foto = event.target.result;
                     document.getElementById('photo-overlay').style.display = 'none';
-                    alert("✅ Foto adjuntada.");
+                    alert("✅ Foto guardada.");
                 };
                 reader.readAsDataURL(file);
             }
