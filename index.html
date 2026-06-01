@@ -2,25 +2,24 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visor Electropuno Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Electropuno Móvil</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <style>
-        body { margin:0; display: flex; font-family: sans-serif; }
-        #sidebar { width: 320px; padding: 15px; background: #f8f9fa; height: 100vh; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.2); z-index: 1000; }
-        #map { flex: 1; height: 100vh; }
-        .item { padding: 10px; border-bottom: 1px solid #ccc; cursor: pointer; display: flex; align-items: center; gap: 8px; background: white; margin-bottom: 5px; border-radius: 4px; }
-        button { width: 100%; padding: 12px; margin-top: 10px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; }
+        body { margin:0; padding:0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
+        #map { flex: 1; width: 100%; }
+        #panel { height: 150px; background: #fff; padding: 10px; box-shadow: 0 -2px 5px rgba(0,0,0,0.2); z-index: 1000; display: flex; flex-direction: column; gap: 5px; }
+        button { padding: 15px; font-size: 16px; border: none; border-radius: 8px; background: #28a745; color: white; font-weight: bold; }
+        .info { font-size: 12px; color: #666; text-align: center; }
     </style>
 </head>
 <body>
-    <div id="sidebar">
-        <h4>Trazos de Supervisión</h4>
-        <div id="items-container"></div>
-        <button onclick="descargarGeoJSON()">💾 Descargar GeoJSON</button>
-    </div>
     <div id="map"></div>
+    <div id="panel">
+        <button onclick="descargarGeoJSON()">💾 GUARDAR Y EXPORTAR TRAZOS</button>
+        <div class="info">Toca el icono de lápiz en el mapa para dibujar.<br>Al terminar, pulsa el botón para descargar el archivo .geojson.</div>
+    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
@@ -29,61 +28,38 @@
         var map = L.map('map').setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // Capa WMS Electropuno
+        // Capa WMS (Asegúrate de tener conexión a la red de Electropuno)
         L.tileLayer.wms("http://192.168.236.107/arcgis/services/Redes/MapServer/WmsServer", {
             layers: '0', format: 'image/png', transparent: true
         }).addTo(map);
 
         var drawnItems = new L.FeatureGroup().addTo(map);
-        map.addLayer(drawnItems);
-
-        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
-
-        map.on(L.Draw.Event.CREATED, function (e) {
-            var layer = e.layer;
-            layer.feature = { type: "Feature", properties: { nombre: "Trazo " + (drawnItems.getLayers().length + 1) } };
-            drawnItems.addLayer(layer);
-            actualizarSidebar();
-        });
-
-        function actualizarSidebar() {
-            const container = document.getElementById('items-container');
-            container.innerHTML = '';
-            drawnItems.eachLayer(layer => {
-                const id = L.stamp(layer);
-                const div = document.createElement('div');
-                div.className = 'item';
-                div.innerHTML = `<span>${layer.feature.properties.nombre}</span>`;
-                container.appendChild(div);
-            });
-        }
+        new L.Control.Draw({ 
+            edit: { featureGroup: drawnItems }, 
+            draw: { polygon: true, polyline: true, marker: true } 
+        }).addTo(map);
 
         function descargarGeoJSON() {
             let features = [];
-            drawnItems.eachLayer(layer => {
-                let geo = layer.toGeoJSON();
-                geo.properties = layer.feature.properties;
-                features.push(geo);
-            });
+            drawnItems.eachLayer(layer => features.push(layer.toGeoJSON()));
 
             if (features.length === 0) {
-                alert("No hay elementos para exportar.");
+                alert("Primero dibuja algo en el mapa.");
                 return;
             }
 
             const data = JSON.stringify({type: "FeatureCollection", features: features});
             const blob = new Blob([data], {type: "application/json"});
-            const url = URL.createObjectURL(blob);
             
-            // Forzar descarga de forma directa
+            // Forzar descarga amigable para móvil
             const a = document.createElement('a');
-            a.href = url;
-            a.download = "inspeccion_campo.geojson";
-            document.body.appendChild(a);
+            a.href = URL.createObjectURL(blob);
+            a.download = "inspeccion_" + new Date().toLocaleDateString() + ".geojson";
             a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
         }
+
+        // Auto-ubicación al iniciar
+        map.locate({setView: true, maxZoom: 17});
     </script>
 </body>
 </html>
