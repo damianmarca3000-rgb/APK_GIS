@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Electropuno Pro - Captura GIS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
@@ -10,22 +10,22 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
+        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; overflow: hidden; }
         #map { height: calc(100vh - 60px); width: 100%; }
-        #panel { height: 60px; display: flex; gap: 10px; padding: 10px; background: #333; align-items: center; }
-        button { padding: 8px; cursor: pointer; border: none; border-radius: 4px; }
-        #sidebar { position:fixed; top:60px; right:-260px; width:260px; height:calc(100% - 60px); background:white; z-index:999; transition:0.3s; padding:10px; box-shadow:-2px 0 5px #ccc; overflow-y: auto; }
+        #panel { height: 60px; display: flex; gap: 5px; padding: 5px; background: #333; align-items: center; justify-content: space-between; }
+        button { padding: 12px 15px; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; }
+        #sidebar { position:fixed; top:60px; right:-100%; width:100%; height:calc(100% - 60px); background:white; z-index:999; transition:0.3s; padding:15px; box-sizing: border-box; overflow-y: auto; }
         #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:300px; }
-        input { display:block; width:90%; margin:10px 0; padding:10px; }
-        #preview { width:100%; max-height:150px; display:none; margin-bottom:10px; }
-        .list-item { border-bottom:1px solid #ddd; padding:10px 0; display:flex; align-items:center; gap:10px; }
+        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:400px; box-sizing: border-box; }
+        input { display:block; width:100%; margin:10px 0; padding:12px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        #preview { width:100%; max-height:150px; display:none; margin-bottom:10px; object-fit: contain; }
+        .list-item { border-bottom:1px solid #eee; padding:15px 0; display:flex; align-items:center; gap:10px; }
     </style>
 </head>
 <body>
 
     <div id="panel">
-        <button onclick="exportarSeleccionados()" style="background-color: #28a745; color: white;">💾 EXPORTAR SELECCIÓN</button>
+        <button onclick="exportarSeleccionados()" style="background-color: #28a745; color: white;">💾 COMPARTIR</button>
         <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
     </div>
     
@@ -33,20 +33,20 @@
 
     <div id="sidebar">
         <h3>Gestionar Trazos</h3>
-        <button onclick="document.getElementById('sidebar').style.right = '-260px'" style="width:100%">CERRAR</button>
+        <button onclick="document.getElementById('sidebar').style.right = '-100%'" style="width:100%; background:#666; color:white;">CERRAR</button>
         <div id="lista-trazos"></div>
     </div>
 
     <div id="form-overlay">
         <div class="form-box">
-            <h3>Detalles</h3>
+            <h3>Detalles del Punto</h3>
             <input type="text" id="codRuta" placeholder="Código de Ruta">
             <input type="text" id="numSerie" placeholder="N° Serie">
             <input type="text" id="fases" placeholder="Fases (A,B,C)">
-            <button onclick="document.getElementById('camaraInput').click()">📸 TOMAR FOTO</button>
+            <button onclick="document.getElementById('camaraInput').click()" style="width:100%; background:#555; color:white;">📸 TOMAR FOTO</button>
             <input type="file" id="camaraInput" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(event)">
             <img id="preview" src="" alt="Foto">
-            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; background:#007bff; color:white;">GUARDAR</button>
+            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; background:#007bff; color:white; padding: 15px;">GUARDAR</button>
         </div>
     </div>
 
@@ -54,7 +54,6 @@
         var map = L.map('map').setView([-15.48, -70.13], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         var drawnItems = new L.FeatureGroup().addTo(map);
-        map.addLayer(drawnItems);
         new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
         let activeLayer, fotoBase64 = "";
@@ -111,11 +110,7 @@
                 let id = L.stamp(l);
                 let div = document.createElement('div');
                 div.className = 'list-item';
-                div.innerHTML = `
-                    <input type="checkbox" class="export-check" value="${id}" checked>
-                    <span>${l.myData?.codigo || 'Trazo'}</span>
-                    <button onclick="editarTrazo(${id})">✏️</button>
-                `;
+                div.innerHTML = `<input type="checkbox" class="export-check" value="${id}" checked> <span>${l.myData?.codigo || 'Trazo'}</span> <button onclick="editarTrazo(${id})">✏️</button>`;
                 container.appendChild(div);
             });
         }
@@ -133,7 +128,6 @@
                 let l = drawnItems.getLayer(chk.value);
                 let d = l.myData;
                 csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
-
                 kml += `<Placemark><name>${d.codigo}</name>`;
                 if (l instanceof L.Polygon) {
                     kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`;
@@ -155,10 +149,22 @@
             zip.file(`Seleccion_${fecha}.kml`, kml);
 
             const content = await zip.generateAsync({type:"blob"});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(content);
-            a.download = `Electropuno_Seleccion_${fecha}.zip`;
-            a.click();
+            const file = new File([content], `Electropuno_${fecha}.zip`, { type: "application/zip" });
+
+            // Web Share API para abrir el menú de compartir del celular
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({ files: [file], title: 'GIS Data', text: 'Trazos Electropuno' });
+                } catch (err) {
+                    console.error("Error al compartir", err);
+                }
+            } else {
+                // Fallback si no es compatible (descarga normal)
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(content);
+                a.download = file.name;
+                a.click();
+            }
         }
     </script>
 </body>
