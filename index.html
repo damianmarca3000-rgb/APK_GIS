@@ -88,36 +88,54 @@
 
     // 4. Exportar ZIP (CSV + Fotos)
     async function exportarZip() {
-        const zip = new JSZip();
-        let csv = "Ruta,Serie,Lat,Lon\n";
-        
-        drawnItems.eachLayer((l, i) => {
-            const data = l.myData || {ruta:'-', serie:'-'};
-            const pos = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
-            csv += `${data.ruta},${data.serie},${pos.lat},${pos.lng}\n`;
-            
-            // Agregar fotos al ZIP
-            data.fotos?.forEach((f, idx) => {
-                zip.file(`Ruta_${data.ruta}_${i}_foto${idx}.jpg`, f.split(',')[1], {base64: true});
-            });
-        });
-        
-        zip.file("registros.csv", csv);
-        const blob = await zip.generateAsync({type:"blob"});
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = "Electropuno_Data.zip";
-        a.click();
-    }
+    const zip = new JSZip();
+    let csv = "Ruta,Serie,Lat,Lon\n";
+    
+    // 1. Crear la estructura básica del KML
+    let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Electropuno_GIS_Data</name>`;
 
-    // Helpers
-    function toBase64(file) {
-        return new Promise(resolve => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.readAsDataURL(file);
+    // 2. Recorrer los elementos
+    drawnItems.eachLayer((l, i) => {
+        const data = l.myData || {ruta:'-', serie:'-'};
+        const pos = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
+        
+        // Agregar al CSV
+        csv += `${data.ruta},${data.serie},${pos.lat},${pos.lng}\n`;
+        
+        // Agregar al KML
+        kmlContent += `
+    <Placemark>
+      <name>${data.ruta || 'Elemento ' + i}</name>
+      <description>Serie: ${data.serie}</description>
+      <Point>
+        <coordinates>${pos.lng},${pos.lat},0</coordinates>
+      </Point>
+    </Placemark>`;
+        
+        // Agregar fotos al ZIP
+        data.fotos?.forEach((f, idx) => {
+            zip.file(`Ruta_${data.ruta}_${i}_foto${idx}.jpg`, f.split(',')[1], {base64: true});
         });
-    }
+    });
+
+    kmlContent += `
+  </Document>
+</kml>`;
+
+    // 3. Agregar archivos al ZIP
+    zip.file("registros.csv", csv);
+    zip.file("registros.kml", kmlContent);
+    
+    // 4. Descarga
+    const blob = await zip.generateAsync({type:"blob"});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = "Electropuno_Data_Completo.zip";
+    a.click();
+}
 
     function renderLista() {
         const list = document.getElementById('lista-elementos');
