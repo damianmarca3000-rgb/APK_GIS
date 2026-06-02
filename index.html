@@ -9,11 +9,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
     <style>
         body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
         #panel { height: 60px; display: flex; gap: 10px; padding: 10px; background: #333; align-items: center; color: white;}
-        #lista-registros { height: 60px; overflow-y: auto; background: #eee; font-size: 12px; padding: 5px; border-bottom: 1px solid #ccc; }
+        #lista-registros { height: 60px; overflow-y: auto; background: #eee; font-size: 12px; padding: 5px; }
         #map { height: calc(100vh - 120px); width: 100%; }
         .form-box { background:white; padding:15px; border-radius:10px; width:95%; max-width:400px; max-height:90vh; overflow-y:auto; }
         #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
@@ -24,9 +23,7 @@
 <body>
 
     <div id="panel">
-        <button onclick="exportarSeleccionados()" style="background:#28a745; color:white; border:none; padding:10px;">💾 EXPORTAR KMZ</button>
-        <input type="file" id="importKml" accept=".kml" style="display:none" onchange="importarKml(event)">
-        <button onclick="document.getElementById('importKml').click()" style="background:#ffc107; border:none; padding:10px; cursor:pointer;">📂 IMPORTAR KML</button>
+        <button onclick="exportarSeleccionados()" style="background:#28a745; color:white; border:none; padding:10px;">💾 EXPORTAR KMZ FINAL</button>
         <span>Electropuno GIS</span>
     </div>
     <div id="lista-registros"></div>
@@ -65,22 +62,10 @@
             document.getElementById('form-overlay').style.display = 'flex';
         });
 
-        // Función para importar KML
-        function importarKml(e) {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const kml = new DOMParser().parseFromString(event.target.result, 'text/xml');
-                const geojson = toGeoJSON.kml(kml);
-                L.geoJSON(geojson).eachLayer(layer => {
-                    drawnItems.addLayer(layer);
-                    actualizarLista();
-                });
-            };
-            reader.readAsText(file);
+        function tomarFoto(index) {
+            currentFotoIndex = index;
+            document.getElementById('camaraInput').click();
         }
-
-        function tomarFoto(index) { currentFotoIndex = index; document.getElementById('camaraInput').click(); }
 
         async function procesarImagen(e) {
             const file = e.target.files[0];
@@ -108,12 +93,20 @@
         function actualizarPreview() {
             const cont = document.getElementById('preview-container');
             cont.innerHTML = '';
-            fotosData.forEach((f, i) => { if(f) { const img = document.createElement('img'); img.src = f; img.style.width = "60px"; cont.appendChild(img); } });
+            fotosData.forEach((f, i) => {
+                if(f) { const img = document.createElement('img'); img.src = f; img.style.width = "60px"; cont.appendChild(img); }
+            });
         }
 
         function guardarDatos() {
             if(fotosData.includes(null)) { alert("Debes tomar las 3 fotos obligatorias"); return; }
-            activeLayer.myData = { codigo: document.getElementById('codRuta').value, serie: document.getElementById('numSerie').value, fases: document.getElementById('fases').value, fecha: new Date().toLocaleString(), fotos: fotosData };
+            activeLayer.myData = {
+                codigo: document.getElementById('codRuta').value,
+                serie: document.getElementById('numSerie').value,
+                fases: document.getElementById('fases').value,
+                fecha: new Date().toLocaleString(),
+                fotos: fotosData
+            };
             if(!drawnItems.hasLayer(activeLayer)) drawnItems.addLayer(activeLayer);
             actualizarLista();
             document.getElementById('form-overlay').style.display = 'none';
@@ -130,20 +123,41 @@
             let csv = "Codigo,Serie,Fases,Fecha,NombreArchivo\n";
             let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Reporte_Electropuno</name>`;
             const etiquetas = ["CODIGO", "SERIE", "PANORAMICA"];
+            
             drawnItems.eachLayer((l) => {
-                let d = l.myData || {serie: "SinDatos", codigo: "-", fases: "-", fecha: "-", fotos: []};
+                let d = l.myData;
+                if (!d) return;
+
                 kml += `<Placemark><name>${d.serie}</name>`;
-                if (l instanceof L.Polygon) { kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`; l.getLatLngs()[0].forEach(p => kml += `${p.lng},${p.lat},0 `); kml += `</coordinates></LinearRing></outerBoundaryIs></Polygon>`; }
-                else if (l instanceof L.Polyline) { kml += `<LineString><coordinates>`; l.getLatLngs().forEach(p => kml += `${p.lng},${p.lat},0 `); kml += `</coordinates></LineString>`; }
-                else if (l instanceof L.Marker) { kml += `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates></Point>`; }
+                if (l instanceof L.Polygon) {
+                    kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`;
+                    l.getLatLngs()[0].forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+                } else if (l instanceof L.Polyline) {
+                    kml += `<LineString><coordinates>`;
+                    l.getLatLngs().forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `</coordinates></LineString>`;
+                } else if (l instanceof L.Marker) {
+                    kml += `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates></Point>`;
+                }
                 kml += `</Placemark>`;
-                d.fotos.forEach((f, i) => { if(f) { let n = `${d.serie}_${etiquetas[i]}.jpg`; zip.file(n, f.split(',')[1], {base64: true}); csv += `${d.codigo},${d.serie},${d.fases},${d.fecha},${n}\n`; } });
+
+                d.fotos.forEach((f, i) => {
+                    let nombre = `${d.serie}_${etiquetas[i]}.jpg`;
+                    zip.file(nombre, f.split(',')[1], {base64: true});
+                    csv += `${d.codigo},${d.serie},${d.fases},${d.fecha},${nombre}\n`;
+                });
             });
+
             kml += `</Document></kml>`;
             zip.file("doc.kml", kml);
             zip.file("Reporte.csv", csv);
+            
             const content = await zip.generateAsync({type:"blob"});
-            const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = "Captura_GIS_Final.kmz"; a.click();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(content);
+            a.download = "Captura_GIS_Final.kmz";
+            a.click();
         }
     </script>
 </body>
