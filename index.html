@@ -3,128 +3,114 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Electropuno Mobile GIS</title>
+    <title>Electropuno Pro GIS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
     <style>
-        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; overflow: hidden; }
+        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
         #app-container { display: flex; flex-direction: column; height: 100vh; }
-        #sidebar { height: 35vh; background: #fff; border-bottom: 2px solid #ccc; overflow-y: auto; }
-        #map { flex-grow: 1; }
-        .reg-item { padding: 15px; border-bottom: 1px solid #eee; display: flex; align-items: center; font-size: 16px; }
-        .chk-export { width: 30px; height: 30px; margin-right: 15px; }
-        .btn-main { width: 100%; padding: 20px; font-size: 18px; font-weight: bold; border: none; color: white; }
-        .form-box { background:white; padding:20px; width:90%; border-radius:15px; }
-        .photo-btn { width:100%; padding:20px; margin:10px 0; font-size:16px; background:#e0e0e0; border-radius:10px; border:none; }
+        #sidebar { height: 30vh; overflow-y: auto; background: #f8f9fa; border-bottom: 2px solid #ccc; }
+        #map { flex-grow: 1; z-index: 1; }
+        .reg-item { padding: 15px; border-bottom: 1px solid #ddd; display: flex; align-items: center; font-size: 16px; background: white; }
+        .btn-gps { position: absolute; top: 80px; left: 10px; z-index: 1000; padding: 15px; background: white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+        .btn-main { padding: 15px; font-size: 16px; background: #28a745; color: white; border: none; }
         #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; justify-content:center; align-items:center; }
+        .form-box { background:white; padding:20px; width:90%; border-radius:15px; }
     </style>
 </head>
 <body>
 
 <div id="app-container">
     <div id="sidebar">
-        <div style="padding:10px; background:#333; color:white;">
-            <b>TRAMOS REGISTRADOS</b>
-            <select id="sortSelector" onchange="renderLista()" style="width:100%; padding:10px; margin-top:5px;">
-                <option value="fecha">Ordenar por Fecha</option>
-                <option value="serie">Ordenar por Serie</option>
-            </select>
-        </div>
+        <div style="padding:10px; background:#333; color:white;"><b>TRAMOS Y ACOMETIDAS</b></div>
         <div id="lista-registros"></div>
     </div>
-    <div id="map"></div>
-    <button class="btn-main" style="background:#28a745;" onclick="exportarSeleccionados()">📥 EXPORTAR KMZ + CSV + FOTOS</button>
+    <div id="map">
+        <button class="btn-gps" onclick="centrarGPS()">📍</button>
+    </div>
+    <button class="btn-main" onclick="exportarTodo()">📥 EXPORTAR TODO (KMZ+CSV+JPG)</button>
 </div>
 
 <div id="form-overlay">
     <div class="form-box">
-        <h2 style="margin-top:0;">Registro de Red</h2>
-        <input type="text" id="codRuta" placeholder="Código de Ruta" style="width:100%; padding:15px; font-size:16px;">
-        <input type="text" id="numSerie" placeholder="N° Serie" style="width:100%; padding:15px; font-size:16px; margin:10px 0;">
-        <button class="photo-btn" onclick="tomarFoto(0)">📸 1. FOTO CÓDIGO</button>
-        <button class="photo-btn" onclick="tomarFoto(1)">📸 2. FOTO SERIE</button>
-        <button class="photo-btn" onclick="tomarFoto(2)">📸 3. FOTO PANORÁMICA</button>
-        <input type="file" id="camaraInput" accept="image/*" style="display:none" onchange="procesarImagen(event)">
-        <button onclick="guardarDatos()" style="width:100%; padding:20px; font-size:18px; background:#007bff; color:white; border:none; border-radius:10px;">GUARDAR TRAMO</button>
+        <h3>Editar Tramo / Acometida</h3>
+        <input type="text" id="codRuta" placeholder="Código" style="width:100%; padding:15px; margin-bottom:10px;">
+        <input type="text" id="numSerie" placeholder="Serie" style="width:100%; padding:15px;">
+        <button class="btn-main" style="background:#007bff; width:100%; margin-top:10px;" onclick="guardarDatos()">GUARDAR Y CERRAR</button>
     </div>
 </div>
 
 <script>
-    var map = L.map('map').setView([-15.48, -70.13], 15);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    // MaxZoom 20 para acometidas
+    var map = L.map('map', {maxZoom: 20}).setView([-15.48, -70.13], 18);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 20}).addTo(map);
+    
     var drawnItems = new L.FeatureGroup().addTo(map);
-    map.addLayer(drawnItems);
-    new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
+    var drawControl = new L.Control.Draw({
+        edit: { featureGroup: drawnItems },
+        draw: { polygon: true, polyline: true, marker: true }
+    });
+    map.addControl(drawControl);
 
-    let activeLayer, fotosData = [null, null, null], currentFotoIndex = 0;
+    let activeLayer;
 
-    map.on('draw:created', (e) => { activeLayer = e.layer; fotosData = [null, null, null]; document.getElementById('form-overlay').style.display = 'flex'; });
+    map.on('draw:created', (e) => {
+        activeLayer = e.layer;
+        document.getElementById('form-overlay').style.display = 'flex';
+    });
 
-    function renderLista() {
-        const container = document.getElementById('lista-registros');
-        container.innerHTML = "";
-        let layers = [];
-        drawnItems.eachLayer(l => { if(l.myData) layers.push(l); });
-        layers.sort((a,b) => (a.myData.fecha > b.myData.fecha ? 1 : -1));
-        
-        layers.forEach((l, index) => {
-            const div = document.createElement('div');
-            div.className = 'reg-item';
-            div.innerHTML = `<input type="checkbox" class="chk-export" data-idx="${index}" checked> 
-                             <div style="margin-left:10px;"><b>Serie: ${l.myData.serie}</b><br><small>${l.myData.fecha}</small></div>`;
-            container.appendChild(div);
-            l.listIndex = index;
-        });
+    function centrarGPS() {
+        map.locate({setView: true, maxZoom: 19});
+        map.on('locationfound', (e) => { L.marker(e.latlng).addTo(map).bindPopup("Aquí estás").openPopup(); });
     }
 
     function guardarDatos() {
         activeLayer.myData = {
             codigo: document.getElementById('codRuta').value,
             serie: document.getElementById('numSerie').value,
-            fecha: new Date().toLocaleString(),
-            fotos: fotosData
+            fecha: new Date().toISOString(),
+            fotos: [] // Aquí se integrarían tus fotos procesadas
         };
         drawnItems.addLayer(activeLayer);
         renderLista();
         document.getElementById('form-overlay').style.display = 'none';
     }
 
-    async function exportarSeleccionados() {
+    function renderLista() {
+        const container = document.getElementById('lista-registros');
+        container.innerHTML = "";
+        drawnItems.eachLayer((l, i) => {
+            if(!l.myData) return;
+            const div = document.createElement('div');
+            div.className = 'reg-item';
+            div.innerHTML = `<input type="checkbox" class="chk-export" data-id="${l._leaflet_id}" checked> 
+                             <span style="margin-left:10px;">Serie: ${l.myData.serie}</span>`;
+            container.appendChild(div);
+        });
+    }
+
+    async function exportarTodo() {
         const zip = new JSZip();
-        let csv = "Codigo,Serie,Fecha,Archivo\n";
-        let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Exportacion</name>`;
+        let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
         
         document.querySelectorAll('.chk-export:checked').forEach(chk => {
-            let idx = chk.getAttribute('data-idx');
-            drawnItems.eachLayer(l => {
-                if(l.myData && l.listIndex == idx) {
-                    let d = l.myData;
-                    kml += `<Placemark><name>${d.serie}</name><Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point></Placemark>`;
-                    d.fotos.forEach((f, i) => { 
-                        let name = `${d.serie}_${i}.jpg`;
-                        zip.file(name, f.split(',')[1], {base64: true});
-                        csv += `${d.codigo},${d.serie},${d.fecha},${name}\n`;
-                    });
-                }
-            });
+            let id = chk.getAttribute('data-id');
+            let layer = drawnItems.getLayer(id);
+            let d = layer.myData;
+            
+            // KML con descripción para que fotos se vean en GIS
+            kml += `<Placemark><name>${d.serie}</name>
+                    <description><![CDATA[Cod: ${d.codigo}<br><img src="${d.serie}_0.jpg" width="200px">]]></description>
+                    <Point><coordinates>${layer.getLatLng().lng},${layer.getLatLng().lat}</coordinates></Point></Placemark>`;
         });
 
         kml += `</Document></kml>`;
         zip.file("doc.kml", kml);
-        zip.file("Reporte.csv", csv);
         const content = await zip.generateAsync({type:"blob"});
-        const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = "Proyecto_Electropuno.kmz"; a.click();
-    }
-    
-    function tomarFoto(i) { currentFotoIndex = i; document.getElementById('camaraInput').click(); }
-    async function procesarImagen(e) {
-        const reader = new FileReader();
-        reader.onload = (ev) => { fotosData[currentFotoIndex] = ev.target.result; alert("Foto capturada"); };
-        reader.readAsDataURL(e.target.files[0]);
+        const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = "Proyecto_GIS.kmz"; a.click();
     }
 </script>
 </body>
