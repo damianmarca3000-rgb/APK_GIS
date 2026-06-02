@@ -9,17 +9,18 @@
     <style>
         body, html { margin:0; padding:0; height:100%; font-family: sans-serif; }
         #map { height: 100vh; width: 100%; }
-        .ui-overlay { position: fixed; top: 10px; left: 10px; z-index: 1000; display: flex; gap: 5px; }
-        .sidebar { position: fixed; right: -300px; top: 0; width: 280px; height: 100%; background: white; z-index: 2000; transition: 0.3s; box-shadow: -2px 0 5px rgba(0,0,0,0.3); overflow-y: auto; padding: 15px; }
-        .btn { padding: 10px; border: none; border-radius: 4px; background: #007bff; color: white; cursor: pointer; }
+        .toolbar { position: fixed; top: 10px; left: 10px; z-index: 1000; display: flex; gap: 5px; }
+        .btn { padding: 12px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .sidebar { position: fixed; top: 0; right: -320px; width: 300px; height: 100%; background: white; z-index: 2000; transition: 0.3s; padding: 15px; box-shadow: -2px 0 5px rgba(0,0,0,0.3); overflow-y: auto; }
         .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: none; justify-content: center; align-items: center; }
+        .card { background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; }
     </style>
 </head>
 <body>
 
-<div class="ui-overlay">
-    <button class="btn" onclick="locateUser()">📍 GPS</button>
-    <button class="btn" onclick="toggleSidebar()">📋 LISTA</button>
+<div class="toolbar">
+    <button class="btn" onclick="map.locate({setView: true, maxZoom: 16})">📍 GPS</button>
+    <button class="btn" onclick="document.getElementById('sidebar').style.right='0'">📋 LISTA</button>
     <button class="btn" onclick="exportData()" style="background:#28a745;">💾 ZIP</button>
 </div>
 
@@ -27,20 +28,18 @@
 
 <div id="sidebar" class="sidebar">
     <h3>Registros</h3>
-    <input type="text" id="search" placeholder="Buscar por serie..." onkeyup="filterList()">
+    <input type="text" id="search" placeholder="Buscar..." onkeyup="renderList()" style="width:90%">
     <div id="list-container"></div>
-    <button class="btn" onclick="toggleSidebar()">CERRAR</button>
+    <button class="btn" onclick="this.parentElement.style.right='-320px'">CERRAR</button>
 </div>
 
 <div id="modal" class="modal">
-    <div style="background:white; padding:20px; border-radius:8px; width:90%; max-width:400px;">
-        <h3>Datos del Elemento</h3>
-        <input type="text" id="m-serie" placeholder="Serie (QR/Manual)" style="width:100%; padding:10px;">
-        <button class="btn" onclick="scanQR()">📷 Escanear</button>
-        <div id="photo-zone" style="margin:10px 0;">
-            <input type="file" id="m-fotos" accept="image/*" multiple>
-        </div>
-        <button class="btn" onclick="saveLayer()">GUARDAR</button>
+    <div class="card">
+        <h3>Detalles</h3>
+        <input type="text" id="m-serie" placeholder="Serie (QR/Manual)" style="width:100%; padding:10px; box-sizing:border-box;">
+        <button class="btn" onclick="scan()">📷 QR/Barra</button>
+        <input type="file" id="m-fotos" accept="image/*" multiple capture="environment" style="margin:10px 0;">
+        <button class="btn" style="width:100%" onclick="saveLayer()">GUARDAR</button>
     </div>
 </div>
 
@@ -55,65 +54,57 @@
     const drawnItems = new L.FeatureGroup().addTo(map);
     new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { marker: true, polyline: true, polygon: true } }).addTo(map);
 
-    let currentLayer;
-
-    // GPS
-    function locateUser() { map.locate({setView: true, maxZoom: 16}); }
+    let activeLayer;
 
     // Escáner QR
-    async function scanQR() {
-        const codeReader = new ZXing.BrowserMultiFormatReader();
-        const res = await codeReader.decodeOnceFromVideoDevice(null);
+    async function scan() {
+        const reader = new ZXing.BrowserMultiFormatReader();
+        const res = await reader.decodeOnceFromVideoDevice(null);
         document.getElementById('m-serie').value = res.text;
     }
 
-    // Dibujo
-    map.on('draw:created', (e) => {
-        currentLayer = e.layer;
+    // Dibujo y Edición
+    map.on('draw:created', e => {
+        activeLayer = e.layer;
         document.getElementById('modal').style.display = 'flex';
     });
 
-    // Guardado (Persistencia simplificada en localStorage)
+    // Guardado y Persistencia (Simulación de IndexedDB con lógica de objeto)
     function saveLayer() {
-        currentLayer.myData = {
+        activeLayer.myData = {
             serie: document.getElementById('m-serie').value,
-            timestamp: Date.now()
+            id: Date.now()
         };
-        drawnItems.addLayer(currentLayer);
+        drawnItems.addLayer(activeLayer);
         document.getElementById('modal').style.display = 'none';
-        updateList();
+        renderList();
     }
 
-    // Lista y Edición
-    function updateList() {
+    // Lista interactiva
+    function renderList() {
         const list = document.getElementById('list-container');
         list.innerHTML = '';
-        drawnItems.eachLayer(layer => {
-            let div = document.createElement('div');
+        drawnItems.eachLayer(l => {
+            const div = document.createElement('div');
             div.className = 'list-item';
-            div.innerHTML = `<div>Serie: ${layer.myData?.serie || 'N/A'}</div>`;
-            div.ondblclick = () => map.flyTo(layer.getBounds ? layer.getBounds().getCenter() : layer.getLatLng(), 18);
+            div.innerHTML = `<p>Serie: ${l.myData?.serie || 'Sin código'}</p>`;
+            div.ondblclick = () => map.flyTo(l.getBounds ? l.getBounds().getCenter() : l.getLatLng(), 18);
             list.appendChild(div);
         });
     }
 
-    function toggleSidebar() {
-        const s = document.getElementById('sidebar');
-        s.style.right = s.style.right === '0px' ? '-300px' : '0px';
-    }
-
-    // Exportar ZIP
+    // Exportación ZIP (Integrada)
     async function exportData() {
         const zip = new JSZip();
         let csv = "Serie,Lat,Lon\n";
         drawnItems.eachLayer(l => {
-            const latlng = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
-            csv += `${l.myData?.serie},${latlng.lat},${latlng.lng}\n`;
+            const pos = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
+            csv += `${l.myData?.serie},${pos.lat},${pos.lng}\n`;
         });
-        zip.file("datos.csv", csv);
-        const content = await zip.generateAsync({type:"blob"});
+        zip.file("registros.csv", csv);
+        const blob = await zip.generateAsync({type:"blob"});
         const link = document.createElement('a');
-        link.href = URL.createObjectURL(content);
+        link.href = URL.createObjectURL(blob);
         link.download = "Electropuno_Data.zip";
         link.click();
     }
