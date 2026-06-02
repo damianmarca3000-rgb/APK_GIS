@@ -2,111 +2,86 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Pro GIS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electropuno Pro - GIS Profesional</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-    <script src="https://cdn.jsdelivr.net/npm/idb@7/build/umd.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://unpkg.com/@zxing/library@0.20.0"></script>
     <style>
-        body, html { margin:0; height:100%; font-family: sans-serif; overflow: hidden; }
-        #map { height: 100vh; width: 100%; }
-        .controls { position: absolute; top: 10px; left: 10px; z-index: 1000; display: flex; gap: 5px; }
-        .btn { padding: 10px; background: #004a99; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .sidebar { position: fixed; right: -350px; top: 0; width: 320px; height: 100%; background: white; z-index: 2000; transition: 0.3s; padding: 15px; overflow-y: auto; }
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: none; align-items: center; justify-content: center; }
-        .form-card { background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; }
-        .photo-thumb { width: 80px; height: 80px; border: 1px solid #ccc; margin: 2px; }
+        body { margin:0; display:flex; height:100vh; overflow:hidden; font-family: sans-serif; }
+        #map { flex-grow:1; }
+        .sidebar { width: 320px; background: #eee; padding: 15px; overflow-y: auto; border-right: 1px solid #ccc; }
+        .dropdown { background: white; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        summary { padding: 10px; font-weight: bold; cursor: pointer; background: #e9ecef; }
+        .item { padding: 8px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+        .photo-preview { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
     </style>
 </head>
 <body>
 
-<div class="controls">
-    <button class="btn" onclick="map.locate({setView: true, maxZoom: 17})">📍 GPS</button>
-    <button class="btn" onclick="document.getElementById('sidebar').style.right='0'">📋 LISTA</button>
-    <input type="file" id="importFile" multiple accept=".kmz,.kml" style="display:none" onchange="importarKMZ(this.files)">
-    <button class="btn" onclick="document.getElementById('importFile').click()">📂 KMZ</button>
-    <button class="btn" onclick="exportarZip()" style="background:#28a745;">💾 ZIP</button>
+<div class="sidebar">
+    <h3>Capas (TOC)</h3>
+    
+    <details class="dropdown" open>
+        <summary>✏️ Dibujos (Trazos)</summary>
+        <div id="lista-dibujos"></div>
+    </details>
+
+    <details class="dropdown" open>
+        <summary>📂 Archivos KMZ/KML</summary>
+        <div id="lista-kmz"></div>
+    </details>
 </div>
 
 <div id="map"></div>
 
-<div id="sidebar" class="sidebar">
-    <button onclick="this.parentElement.style.right='-350px'">X</button>
-    <h3>Registros</h3>
-    <input type="text" id="search" placeholder="Buscar..." onkeyup="renderLista()" style="width:90%">
-    <div id="lista-elementos"></div>
-</div>
-
-<div id="modal" class="modal">
-    <div class="form-card">
-        <h3>Datos de Activo</h3>
-        <input type="text" id="m-serie" placeholder="N° Serie" style="width:100%; padding:10px;">
-        <button class="btn" onclick="escanear()">📷 Escanear</button>
-        <div id="preview-fotos"></div>
-        <input type="file" id="m-fotos" accept="image/*" multiple capture="environment">
-        <button class="btn" style="width:100%; margin-top:10px;" onclick="guardar()">GUARDAR</button>
-    </div>
-</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
 <script>
     const map = L.map('map').setView([-15.48, -70.13], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const drawnItems = new L.FeatureGroup().addTo(map);
-    new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { marker: true, polyline: true, polygon: true } }).addTo(map);
+    
+    // Contenedores de capas
+    const groupDibujos = L.featureGroup().addTo(map);
+    const groupKMZ = L.featureGroup().addTo(map);
 
-    let db;
-    // Inicializar IndexedDB
-    idb.openDB('GIS_DB', 1, { upgrade(db) { db.createObjectStore('objetos', {keyPath: 'id'}); } })
-       .then(d => db = d);
+    new L.Control.Draw({ 
+        edit: { featureGroup: groupDibujos }, 
+        draw: { marker: true, polyline: true, polygon: true } 
+    }).addTo(map);
 
-    // Lógica avanzada: Importar KMZ (descomprime el zip y lee el kml)
-    async function importarKMZ(files) {
-        for(let file of files) {
-            const zip = await JSZip.loadAsync(file);
-            const kmlFile = Object.keys(zip.files).find(n => n.endsWith('.kml'));
-            if(kmlFile) {
-                const xml = await zip.files[kmlFile].async("string");
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(xml, "text/xml");
-                // Aquí procesarías los placemarks para crear capas de Leaflet
-                alert("KMZ Procesado. Capas cargadas.");
-            }
-        }
-    }
-
-    // Guardado persistente
-    async function guardar() {
-        const fotos = Array.from(document.getElementById('m-fotos').files);
-        const data = {
-            id: Date.now(),
-            serie: document.getElementById('m-serie').value,
-            coords: drawnItems.getLayers().slice(-1)[0].getBounds ? "polygon" : "point",
-            fotos: fotos // Nota: En producción convierte a base64 o Blob para IndexedDB
-        };
-        await db.put('objetos', data);
-        document.getElementById('modal').style.display = 'none';
-        renderLista();
-    }
-
-    function renderLista() {
-        // Implementación de filtrado y visualización
-        const list = document.getElementById('lista-elementos');
-        list.innerHTML = "";
-        drawnItems.eachLayer(l => {
+    // Renderizado del TOC (Table of Contents)
+    function renderTOC() {
+        const listDibujos = document.getElementById('lista-dibujos');
+        listDibujos.innerHTML = '';
+        
+        groupDibujos.eachLayer(layer => {
             const div = document.createElement('div');
-            div.innerHTML = `<p ondblclick="zoomToLayer(this)">Serie: ${l.myData?.serie || '...'}</p>`;
-            div.layerRef = l;
-            list.appendChild(div);
+            div.className = 'item';
+            div.innerHTML = `<span>ID: ${layer._leaflet_id}</span> 
+                             <button onclick="zoomToLayer(${layer._leaflet_id})">🔍</button>`;
+            listDibujos.appendChild(div);
         });
     }
 
-    function zoomToLayer(el) {
-        const l = el.parentElement.layerRef;
-        map.flyTo(l.getBounds ? l.getBounds().getCenter() : l.getLatLng(), 18);
+    function zoomToLayer(id) {
+        const layer = groupDibujos.getLayer(id) || groupKMZ.getLayer(id);
+        if (layer.getBounds) map.fitBounds(layer.getBounds());
+        else map.setView(layer.getLatLng(), 18);
+    }
+
+    // Listener de dibujo
+    map.on('draw:created', (e) => {
+        const layer = e.layer;
+        layer.addTo(groupDibujos);
+        // Aquí dispararías tu modal de registro de fotos
+        renderTOC();
+    });
+
+    // Ejemplo de cómo organizar importación por grupos
+    function importarKMZ(files) {
+        // ... (Lógica de JSZip aquí)
+        // Al terminar, añades la capa al groupKMZ y llamas a renderTOC()
     }
 </script>
 </body>
