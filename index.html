@@ -15,10 +15,11 @@
         #sidebar { height: 30vh; overflow-y: auto; background: #f8f9fa; border-bottom: 2px solid #ccc; }
         #map { flex-grow: 1; z-index: 1; }
         .reg-item { padding: 15px; border-bottom: 1px solid #ddd; display: flex; align-items: center; font-size: 16px; background: white; }
-        .btn-gps { position: absolute; top: 80px; left: 10px; z-index: 1000; padding: 15px; background: white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
-        .btn-main { padding: 15px; font-size: 16px; background: #28a745; color: white; border: none; }
+        .btn-gps { position: absolute; top: 80px; left: 10px; z-index: 1000; padding: 15px; background: white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); font-size: 20px; }
+        .btn-main { padding: 20px; font-size: 18px; background: #28a745; color: white; border: none; }
+        .form-box { background:white; padding:20px; width:95%; max-width:500px; border-radius:15px; max-height: 90vh; overflow-y: auto; }
         #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; width:90%; border-radius:15px; }
+        .foto-prev { width: 80px; height: 80px; object-fit: cover; border: 2px solid #ddd; margin: 5px; }
     </style>
 </head>
 <body>
@@ -31,48 +32,57 @@
     <div id="map">
         <button class="btn-gps" onclick="centrarGPS()">📍</button>
     </div>
-    <button class="btn-main" onclick="exportarTodo()">📥 EXPORTAR TODO (KMZ+CSV+JPG)</button>
+    <button class="btn-main" onclick="exportarTodo()">📥 EXPORTAR ZIP (KMZ+CSV+FOTOS)</button>
 </div>
 
 <div id="form-overlay">
     <div class="form-box">
-        <h3>Editar Tramo / Acometida</h3>
+        <h3>Detalles del Elemento</h3>
         <input type="text" id="codRuta" placeholder="Código" style="width:100%; padding:15px; margin-bottom:10px;">
-        <input type="text" id="numSerie" placeholder="Serie" style="width:100%; padding:15px;">
-        <button class="btn-main" style="background:#007bff; width:100%; margin-top:10px;" onclick="guardarDatos()">GUARDAR Y CERRAR</button>
+        <input type="text" id="numSerie" placeholder="Serie" style="width:100%; padding:15px; margin-bottom:10px;">
+        
+        <div id="area-fotos" style="display:flex; flex-wrap:wrap; margin-bottom:10px;"></div>
+        <input type="file" id="fInput" accept="image/*" capture="environment" style="display:none" onchange="agregarFoto(event)">
+        <button class="btn-main" style="background:#6c757d; width:100%; margin-bottom:10px;" onclick="document.getElementById('fInput').click()">📸 TOMAR FOTO</button>
+        
+        <button class="btn-main" style="background:#007bff; width:100%;" onclick="guardarDatos()">GUARDAR</button>
     </div>
 </div>
 
 <script>
-    // MaxZoom 20 para acometidas
-    var map = L.map('map', {maxZoom: 20}).setView([-15.48, -70.13], 18);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 20}).addTo(map);
-    
+    var map = L.map('map', {maxZoom: 22}).setView([-15.48, -70.13], 18);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 22}).addTo(map);
     var drawnItems = new L.FeatureGroup().addTo(map);
-    var drawControl = new L.Control.Draw({
-        edit: { featureGroup: drawnItems },
-        draw: { polygon: true, polyline: true, marker: true }
-    });
-    map.addControl(drawControl);
+    map.addLayer(drawnItems);
+    new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-    let activeLayer;
+    let activeLayer, fotosGuardadas = [];
 
     map.on('draw:created', (e) => {
         activeLayer = e.layer;
+        fotosGuardadas = [];
+        document.getElementById('area-fotos').innerHTML = "";
         document.getElementById('form-overlay').style.display = 'flex';
     });
 
-    function centrarGPS() {
-        map.locate({setView: true, maxZoom: 19});
-        map.on('locationfound', (e) => { L.marker(e.latlng).addTo(map).bindPopup("Aquí estás").openPopup(); });
+    function agregarFoto(e) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            fotosGuardadas.push(ev.target.result);
+            const img = document.createElement('img');
+            img.src = ev.target.result;
+            img.className = 'foto-prev';
+            document.getElementById('area-fotos').appendChild(img);
+        };
+        reader.readAsDataURL(e.target.files[0]);
     }
 
     function guardarDatos() {
         activeLayer.myData = {
             codigo: document.getElementById('codRuta').value,
             serie: document.getElementById('numSerie').value,
-            fecha: new Date().toISOString(),
-            fotos: [] // Aquí se integrarían tus fotos procesadas
+            fecha: new Date().toLocaleString(),
+            fotos: fotosGuardadas
         };
         drawnItems.addLayer(activeLayer);
         renderLista();
@@ -82,35 +92,38 @@
     function renderLista() {
         const container = document.getElementById('lista-registros');
         container.innerHTML = "";
-        drawnItems.eachLayer((l, i) => {
+        drawnItems.eachLayer((l) => {
             if(!l.myData) return;
             const div = document.createElement('div');
             div.className = 'reg-item';
             div.innerHTML = `<input type="checkbox" class="chk-export" data-id="${l._leaflet_id}" checked> 
-                             <span style="margin-left:10px;">Serie: ${l.myData.serie}</span>`;
+                             <span style="margin-left:10px;"><b>${l.myData.serie}</b> - ${l.myData.codigo}</span>`;
             container.appendChild(div);
         });
     }
 
     async function exportarTodo() {
         const zip = new JSZip();
+        let csv = "Codigo,Serie,Fecha\n";
         let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
         
         document.querySelectorAll('.chk-export:checked').forEach(chk => {
-            let id = chk.getAttribute('data-id');
-            let layer = drawnItems.getLayer(id);
+            let layer = drawnItems.getLayer(chk.getAttribute('data-id'));
             let d = layer.myData;
-            
-            // KML con descripción para que fotos se vean en GIS
-            kml += `<Placemark><name>${d.serie}</name>
-                    <description><![CDATA[Cod: ${d.codigo}<br><img src="${d.serie}_0.jpg" width="200px">]]></description>
-                    <Point><coordinates>${layer.getLatLng().lng},${layer.getLatLng().lat}</coordinates></Point></Placemark>`;
+            kml += `<Placemark><name>${d.serie}</name><Point><coordinates>${layer.getLatLng().lng},${layer.getLatLng().lat}</coordinates></Point></Placemark>`;
+            csv += `${d.codigo},${d.serie},${d.fecha}\n`;
+            d.fotos.forEach((f, i) => zip.file(`${d.serie}_foto_${i}.jpg`, f.split(',')[1], {base64: true}));
         });
 
-        kml += `</Document></kml>`;
-        zip.file("doc.kml", kml);
+        zip.file("doc.kml", kml + `</Document></kml>`);
+        zip.file("reporte.csv", csv);
         const content = await zip.generateAsync({type:"blob"});
-        const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = "Proyecto_GIS.kmz"; a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = "Electropuno_Data.zip"; a.click();
+    }
+
+    function centrarGPS() {
+        map.locate({setView: true, maxZoom: 19});
+        map.on('locationfound', (e) => { L.circle(e.latlng, 5).addTo(map); });
     }
 </script>
 </body>
