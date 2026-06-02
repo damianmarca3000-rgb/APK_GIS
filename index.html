@@ -91,6 +91,66 @@
     const zip = new JSZip();
     let csv = "Ruta,Serie,Lat,Lon\n";
     
+    // Encabezado KML válido
+    let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Exportacion_Electropuno</name>`;
+
+    // Recorremos todas las capas dibujadas
+    drawnItems.eachLayer((l, i) => {
+        const data = l.myData || {ruta: 'SinRuta', serie: 'S/N'};
+        
+        // CSV
+        const pos = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
+        csv += `${data.ruta},${data.serie},${pos.lat},${pos.lng}\n`;
+
+        // KML - Manejo de diferentes geometrías
+        kmlContent += `
+    <Placemark>
+      <name>${data.serie}</name>
+      <description>Ruta: ${data.ruta}</description>`;
+      
+        if (l instanceof L.Marker) {
+            kmlContent += `
+      <Point>
+        <coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates>
+      </Point>`;
+        } else if (l instanceof L.Polygon || l instanceof L.Polyline) {
+            const coords = l.getLatLngs()[0].map(c => `${c.lng},${c.lat},0`).join(' ');
+            kmlContent += `
+      <LineString>
+        <coordinates>${coords}</coordinates>
+      </LineString>`;
+        }
+        kmlContent += `
+    </Placemark>`;
+
+        // Fotos al ZIP
+        if (data.fotos) {
+            data.fotos.forEach((f, idx) => {
+                const base64Data = f.split(',')[1];
+                zip.file(`Ruta_${data.ruta}_${i}_foto${idx + 1}.jpg`, base64Data, {base64: true});
+            });
+        }
+    });
+
+    kmlContent += `
+  </Document>
+</kml>`;
+
+    // Agregar al ZIP
+    zip.file("registros.csv", csv);
+    zip.file("exportacion.kml", kmlContent);
+    
+    // Generación final
+    const blob = await zip.generateAsync({type:"blob"});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = "Electropuno_GIS_Completo.zip";
+    a.click();
+}
+    
     // 1. Crear la estructura básica del KML
     let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
