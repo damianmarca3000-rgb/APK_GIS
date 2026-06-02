@@ -2,118 +2,132 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Electropuno Pro GIS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://unpkg.com/@zxing/library@0.20.0"></script>
     <style>
-        body { margin:0; display:flex; height:100vh; font-family: sans-serif; }
-        #map { flex-grow:1; }
-        .sidebar { width: 320px; background: #f8f9fa; padding: 15px; overflow-y: auto; border-right: 1px solid #ccc; z-index: 1000; }
+        body, html { margin:0; height:100%; font-family: 'Segoe UI', sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        .controls { position: absolute; top: 10px; left: 10px; z-index: 1000; display: flex; gap: 5px; }
+        .btn { padding: 12px; background: #004a99; color: white; border: none; border-radius: 5px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+        .sidebar { position: fixed; right: -320px; top: 0; width: 300px; height: 100%; background: #f8f9fa; z-index: 2000; transition: 0.3s; padding: 15px; box-shadow: -2px 0 5px rgba(0,0,0,0.3); overflow-y: auto; }
         .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: none; align-items: center; justify-content: center; }
-        .form-card { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; }
-        .btn { padding: 10px; margin: 5px 0; width: 100%; border: none; border-radius: 5px; cursor: pointer; background: #004a99; color: white; }
+        .form-card { background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; }
     </style>
 </head>
 <body>
 
-<div class="sidebar">
-    <h3>TOC - Gestión de Capas</h3>
-    <button class="btn" style="background:#28a745" onclick="exportarTodo()">💾 EXPORTAR ZIP COMPLETO</button>
-    <hr>
-    <details open><summary>✏️ Dibujos de Campo</summary><div id="lista-dibujos"></div></details>
+<div class="controls">
+    <button class="btn" onclick="map.locate({setView: true, maxZoom: 17})">📍 GPS</button>
+    <button class="btn" onclick="document.getElementById('sidebar').style.right='0'">📋 LISTA</button>
+    <button class="btn" style="background:#28a745;" onclick="exportarZip()">💾 EXPORTAR ZIP</button>
 </div>
 
 <div id="map"></div>
 
+<div id="sidebar" class="sidebar">
+    <button class="btn" onclick="this.parentElement.style.right='-320px'">Cerrar</button>
+    <h3>Registros</h3>
+    <div id="lista-elementos"></div>
+</div>
+
 <div id="modal" class="modal">
     <div class="form-card">
-        <h3>Registrar Suministro</h3>
-        <input type="text" id="m-ruta" placeholder="Código de Ruta" style="width:100%; padding:8px; margin:5px 0;">
-        <input type="text" id="m-serie" placeholder="N° Serie" style="width:100%; padding:8px; margin:5px 0;">
-        <button class="btn" onclick="escanear()">📷 Escanear Serie</button>
-        <input type="file" id="m-fotos" multiple accept="image/*" capture="environment">
-        <button class="btn" style="background:#28a745" onclick="guardarDatos()">GUARDAR Y CERRAR</button>
+        <h3>Registro de Activo</h3>
+        <input type="text" id="m-ruta" placeholder="Código de Ruta" style="width:100%; padding:10px; margin-bottom:10px; box-sizing:border-box;">
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+            <input type="text" id="m-serie" placeholder="N° Serie" style="flex-grow:1; padding:10px; box-sizing:border-box;">
+            <button class="btn" onclick="escanear()">📷</button>
+        </div>
+        <input type="file" id="m-fotos" accept="image/*" multiple capture="environment">
+        <button class="btn" style="width:100%; margin-top:15px;" onclick="guardar()">GUARDAR REGISTRO</button>
     </div>
 </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.20.0"></script>
 
 <script>
     const map = L.map('map').setView([-15.48, -70.13], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const groupDibujos = L.featureGroup().addTo(map);
-    new L.Control.Draw({ edit: { featureGroup: groupDibujos }, draw: { marker: true, polyline: true, polygon: true } }).addTo(map);
+    const drawnItems = new L.FeatureGroup().addTo(map);
+    new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { marker: true, polyline: true, polygon: true } }).addTo(map);
 
     let activeLayer;
 
-    // 1. Trigger del formulario al terminar dibujo
+    // 1. Lógica de Dibujo
     map.on(L.Draw.Event.CREATED, e => {
         activeLayer = e.layer;
         document.getElementById('modal').style.display = 'flex';
     });
 
-    // 2. Guardar datos y fotos en el objeto
-    async function guardarDatos() {
+    // 2. Escáner
+    async function escanear() {
+        const reader = new ZXing.BrowserMultiFormatReader();
+        const res = await reader.decodeOnceFromVideoDevice(null);
+        document.getElementById('m-serie').value = res.text;
+    }
+
+    // 3. Guardado con Fotos
+    async function guardar() {
         const files = document.getElementById('m-fotos').files;
+        const fotosBase64 = await Promise.all(Array.from(files).map(toBase64));
+        
         activeLayer.myData = {
             ruta: document.getElementById('m-ruta').value,
             serie: document.getElementById('m-serie').value,
-            fotos: await Promise.all(Array.from(files).map(f => toBase64(f)))
+            fotos: fotosBase64
         };
-        groupDibujos.addLayer(activeLayer);
+        drawnItems.addLayer(activeLayer);
         document.getElementById('modal').style.display = 'none';
-        renderTOC();
+        renderLista();
     }
 
-    // 3. Exportación Maestra (CSV + KMZ + Fotos)
-    async function exportarTodo() {
+    // 4. Exportar ZIP (CSV + Fotos)
+    async function exportarZip() {
         const zip = new JSZip();
         let csv = "Ruta,Serie,Lat,Lon\n";
         
-        groupDibujos.eachLayer((l, index) => {
+        drawnItems.eachLayer((l, i) => {
             const data = l.myData || {ruta:'-', serie:'-'};
             const pos = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
             csv += `${data.ruta},${data.serie},${pos.lat},${pos.lng}\n`;
             
             // Agregar fotos al ZIP
-            data.fotos?.forEach((f, i) => zip.file(`foto_${index}_${i}.jpg`, f.split(',')[1], {base64: true}));
+            data.fotos?.forEach((f, idx) => {
+                zip.file(`Ruta_${data.ruta}_${i}_foto${idx}.jpg`, f.split(',')[1], {base64: true});
+            });
         });
         
         zip.file("registros.csv", csv);
         const blob = await zip.generateAsync({type:"blob"});
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = "Electropuno_Export.zip";
+        a.download = "Electropuno_Data.zip";
         a.click();
     }
 
+    // Helpers
     function toBase64(file) {
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
             const reader = new FileReader();
-            reader.readAsDataURL(file);
             reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(file);
         });
     }
 
-    function renderTOC() {
-        const list = document.getElementById('lista-dibujos');
+    function renderLista() {
+        const list = document.getElementById('lista-elementos');
         list.innerHTML = '';
-        groupDibujos.eachLayer(l => {
+        drawnItems.eachLayer(l => {
             const div = document.createElement('div');
-            div.className = 'btn';
-            div.style.background = '#eee'; div.style.color = 'black';
+            div.style.padding = '10px';
             div.innerHTML = `Ruta: ${l.myData?.ruta || 'N/A'}`;
             list.appendChild(div);
         });
-    }
-
-    async function escanear() {
-        const reader = new ZXing.BrowserMultiFormatReader();
-        const res = await reader.decodeOnceFromVideoDevice(null);
-        document.getElementById('m-serie').value = res.text;
     }
 </script>
 </body>
