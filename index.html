@@ -2,210 +2,128 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Electropuno Pro GIS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body, html { margin:0; height:100%; font-family: 'Segoe UI', sans-serif; }
-        #map { height: 100vh; width: 100%; }
-        .controls { position: absolute; top: 10px; left: 10px; z-index: 1000; display: flex; gap: 5px; }
-        .btn { padding: 12px; background: #004a99; color: white; border: none; border-radius: 5px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
-        .sidebar { position: fixed; right: -320px; top: 0; width: 300px; height: 100%; background: #f8f9fa; z-index: 2000; transition: 0.3s; padding: 15px; box-shadow: -2px 0 5px rgba(0,0,0,0.3); overflow-y: auto; }
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: none; align-items: center; justify-content: center; }
-        .form-card { background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; }
+        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
+        #app-container { display: flex; flex-direction: column; height: 100vh; }
+        #sidebar { height: 30vh; overflow-y: auto; background: #f8f9fa; border-bottom: 2px solid #ccc; }
+        #map { flex-grow: 1; z-index: 1; }
+        .reg-item { padding: 15px; border-bottom: 1px solid #ddd; display: flex; align-items: center; font-size: 16px; background: white; }
+        .btn-gps { position: absolute; top: 80px; left: 10px; z-index: 1000; padding: 15px; background: white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); font-size: 20px; }
+        .btn-main { padding: 20px; font-size: 18px; background: #28a745; color: white; border: none; }
+        .form-box { background:white; padding:20px; width:95%; max-width:500px; border-radius:15px; max-height: 90vh; overflow-y: auto; }
+        #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; justify-content:center; align-items:center; }
+        .foto-prev { width: 80px; height: 80px; object-fit: cover; border: 2px solid #ddd; margin: 5px; }
     </style>
 </head>
 <body>
 
-<div class="controls">
-    <button class="btn" onclick="map.locate({setView: true, maxZoom: 17})">📍 GPS</button>
-    <button class="btn" onclick="document.getElementById('sidebar').style.right='0'">📋 LISTA</button>
-    <button class="btn" style="background:#28a745;" onclick="exportarZip()">💾 EXPORTAR ZIP</button>
+<div id="app-container">
+    <div id="sidebar">
+        <div style="padding:10px; background:#333; color:white;"><b>TRAMOS Y ACOMETIDAS</b></div>
+        <div id="lista-registros"></div>
+    </div>
+    <div id="map">
+        <button class="btn-gps" onclick="centrarGPS()">📍</button>
+    </div>
+    <button class="btn-main" onclick="exportarTodo()">📥 EXPORTAR ZIP (KMZ+CSV+FOTOS)</button>
 </div>
 
-<div id="map"></div>
-
-<div id="sidebar" class="sidebar">
-    <button class="btn" onclick="this.parentElement.style.right='-320px'">Cerrar</button>
-    <h3>Registros</h3>
-    <div id="lista-elementos"></div>
-</div>
-
-<div id="modal" class="modal">
-    <div class="form-card">
-        <h3>Registro de Activo</h3>
-        <input type="text" id="m-ruta" placeholder="Código de Ruta" style="width:100%; padding:10px; margin-bottom:10px; box-sizing:border-box;">
-        <div style="display:flex; gap:5px; margin-bottom:10px;">
-            <input type="text" id="m-serie" placeholder="N° Serie" style="flex-grow:1; padding:10px; box-sizing:border-box;">
-            <button class="btn" onclick="escanear()">📷</button>
-        </div>
-        <input type="file" id="m-fotos" accept="image/*" multiple capture="environment">
-        <button class="btn" style="width:100%; margin-top:15px;" onclick="guardar()">GUARDAR REGISTRO</button>
+<div id="form-overlay">
+    <div class="form-box">
+        <h3>Detalles del Elemento</h3>
+        <input type="text" id="codRuta" placeholder="Código" style="width:100%; padding:15px; margin-bottom:10px;">
+        <input type="text" id="numSerie" placeholder="Serie" style="width:100%; padding:15px; margin-bottom:10px;">
+        
+        <div id="area-fotos" style="display:flex; flex-wrap:wrap; margin-bottom:10px;"></div>
+        <input type="file" id="fInput" accept="image/*" capture="environment" style="display:none" onchange="agregarFoto(event)">
+        <button class="btn-main" style="background:#6c757d; width:100%; margin-bottom:10px;" onclick="document.getElementById('fInput').click()">📸 TOMAR FOTO</button>
+        
+        <button class="btn-main" style="background:#007bff; width:100%;" onclick="guardarDatos()">GUARDAR</button>
     </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://unpkg.com/@zxing/library@0.20.0"></script>
-
 <script>
-    const map = L.map('map').setView([-15.48, -70.13], 15);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const drawnItems = new L.FeatureGroup().addTo(map);
-    new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { marker: true, polyline: true, polygon: true } }).addTo(map);
+    var map = L.map('map', {maxZoom: 22}).setView([-15.48, -70.13], 18);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 22}).addTo(map);
+    var drawnItems = new L.FeatureGroup().addTo(map);
+    map.addLayer(drawnItems);
+    new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-    let activeLayer;
+    let activeLayer, fotosGuardadas = [];
 
-    // 1. Lógica de Dibujo
-    map.on(L.Draw.Event.CREATED, e => {
+    map.on('draw:created', (e) => {
         activeLayer = e.layer;
-        document.getElementById('modal').style.display = 'flex';
+        fotosGuardadas = [];
+        document.getElementById('area-fotos').innerHTML = "";
+        document.getElementById('form-overlay').style.display = 'flex';
     });
 
-    // 2. Escáner
-    async function escanear() {
-        const reader = new ZXing.BrowserMultiFormatReader();
-        const res = await reader.decodeOnceFromVideoDevice(null);
-        document.getElementById('m-serie').value = res.text;
+    function agregarFoto(e) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            fotosGuardadas.push(ev.target.result);
+            const img = document.createElement('img');
+            img.src = ev.target.result;
+            img.className = 'foto-prev';
+            document.getElementById('area-fotos').appendChild(img);
+        };
+        reader.readAsDataURL(e.target.files[0]);
     }
 
-    // 3. Guardado con Fotos
-    async function guardar() {
-        const files = document.getElementById('m-fotos').files;
-        const fotosBase64 = await Promise.all(Array.from(files).map(toBase64));
-        
+    function guardarDatos() {
         activeLayer.myData = {
-            ruta: document.getElementById('m-ruta').value,
-            serie: document.getElementById('m-serie').value,
-            fotos: fotosBase64
+            codigo: document.getElementById('codRuta').value,
+            serie: document.getElementById('numSerie').value,
+            fecha: new Date().toLocaleString(),
+            fotos: fotosGuardadas
         };
         drawnItems.addLayer(activeLayer);
-        document.getElementById('modal').style.display = 'none';
         renderLista();
+        document.getElementById('form-overlay').style.display = 'none';
     }
 
-    // 4. Exportar ZIP (CSV + Fotos)
-    async function exportarZip() {
-    const zip = new JSZip();
-    let csv = "Ruta,Serie,Lat,Lon\n";
-    
-    // Encabezado KML válido
-    let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>Exportacion_Electropuno</name>`;
-
-    // Recorremos todas las capas dibujadas
-    drawnItems.eachLayer((l, i) => {
-        const data = l.myData || {ruta: 'SinRuta', serie: 'S/N'};
-        
-        // CSV
-        const pos = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
-        csv += `${data.ruta},${data.serie},${pos.lat},${pos.lng}\n`;
-
-        // KML - Manejo de diferentes geometrías
-        kmlContent += `
-    <Placemark>
-      <name>${data.serie}</name>
-      <description>Ruta: ${data.ruta}</description>`;
-      
-        if (l instanceof L.Marker) {
-            kmlContent += `
-      <Point>
-        <coordinates>${l.getLatLng().lng},${l.getLatLng().lat},0</coordinates>
-      </Point>`;
-        } else if (l instanceof L.Polygon || l instanceof L.Polyline) {
-            const coords = l.getLatLngs()[0].map(c => `${c.lng},${c.lat},0`).join(' ');
-            kmlContent += `
-      <LineString>
-        <coordinates>${coords}</coordinates>
-      </LineString>`;
-        }
-        kmlContent += `
-    </Placemark>`;
-
-        // Fotos al ZIP
-        if (data.fotos) {
-            data.fotos.forEach((f, idx) => {
-                const base64Data = f.split(',')[1];
-                zip.file(`Ruta_${data.ruta}_${i}_foto${idx + 1}.jpg`, base64Data, {base64: true});
-            });
-        }
-    });
-
-    kmlContent += `
-  </Document>
-</kml>`;
-
-    // Agregar al ZIP
-    zip.file("registros.csv", csv);
-    zip.file("exportacion.kml", kmlContent);
-    
-    // Generación final
-    const blob = await zip.generateAsync({type:"blob"});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = "Electropuno_GIS_Completo.zip";
-    a.click();
-}
-    
-    // 1. Crear la estructura básica del KML
-    let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>Electropuno_GIS_Data</name>`;
-
-    // 2. Recorrer los elementos
-    drawnItems.eachLayer((l, i) => {
-        const data = l.myData || {ruta:'-', serie:'-'};
-        const pos = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
-        
-        // Agregar al CSV
-        csv += `${data.ruta},${data.serie},${pos.lat},${pos.lng}\n`;
-        
-        // Agregar al KML
-        kmlContent += `
-    <Placemark>
-      <name>${data.ruta || 'Elemento ' + i}</name>
-      <description>Serie: ${data.serie}</description>
-      <Point>
-        <coordinates>${pos.lng},${pos.lat},0</coordinates>
-      </Point>
-    </Placemark>`;
-        
-        // Agregar fotos al ZIP
-        data.fotos?.forEach((f, idx) => {
-            zip.file(`Ruta_${data.ruta}_${i}_foto${idx}.jpg`, f.split(',')[1], {base64: true});
-        });
-    });
-
-    kmlContent += `
-  </Document>
-</kml>`;
-
-    // 3. Agregar archivos al ZIP
-    zip.file("registros.csv", csv);
-    zip.file("registros.kml", kmlContent);
-    
-    // 4. Descarga
-    const blob = await zip.generateAsync({type:"blob"});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = "Electropuno_Data_Completo.zip";
-    a.click();
-}
-
     function renderLista() {
-        const list = document.getElementById('lista-elementos');
-        list.innerHTML = '';
-        drawnItems.eachLayer(l => {
+        const container = document.getElementById('lista-registros');
+        container.innerHTML = "";
+        drawnItems.eachLayer((l) => {
+            if(!l.myData) return;
             const div = document.createElement('div');
-            div.style.padding = '10px';
-            div.innerHTML = `Ruta: ${l.myData?.ruta || 'N/A'}`;
-            list.appendChild(div);
+            div.className = 'reg-item';
+            div.innerHTML = `<input type="checkbox" class="chk-export" data-id="${l._leaflet_id}" checked> 
+                             <span style="margin-left:10px;"><b>${l.myData.serie}</b> - ${l.myData.codigo}</span>`;
+            container.appendChild(div);
         });
+    }
+
+    async function exportarTodo() {
+        const zip = new JSZip();
+        let csv = "Codigo,Serie,Fecha\n";
+        let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
+        
+        document.querySelectorAll('.chk-export:checked').forEach(chk => {
+            let layer = drawnItems.getLayer(chk.getAttribute('data-id'));
+            let d = layer.myData;
+            kml += `<Placemark><name>${d.serie}</name><Point><coordinates>${layer.getLatLng().lng},${layer.getLatLng().lat}</coordinates></Point></Placemark>`;
+            csv += `${d.codigo},${d.serie},${d.fecha}\n`;
+            d.fotos.forEach((f, i) => zip.file(`${d.serie}_foto_${i}.jpg`, f.split(',')[1], {base64: true}));
+        });
+
+        zip.file("doc.kml", kml + `</Document></kml>`);
+        zip.file("reporte.csv", csv);
+        const content = await zip.generateAsync({type:"blob"});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = "Electropuno_Data.zip"; a.click();
+    }
+
+    function centrarGPS() {
+        map.locate({setView: true, maxZoom: 19});
+        map.on('locationfound', (e) => { L.circle(e.latlng, 5).addTo(map); });
     }
 </script>
 </body>
