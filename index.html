@@ -2,116 +2,170 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Electropuno Pro GIS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Electropuno Pro - Captura GIS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; }
-        #app-container { display: flex; flex-direction: column; height: 100vh; }
-        #sidebar { height: 30vh; overflow-y: auto; background: #f8f9fa; border-bottom: 2px solid #ccc; }
-        #map { flex-grow: 1; z-index: 1; }
-        .reg-item { padding: 15px; border-bottom: 1px solid #ddd; display: flex; align-items: center; font-size: 16px; background: white; }
-        .btn-gps { position: absolute; top: 80px; left: 10px; z-index: 1000; padding: 15px; background: white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
-        .btn-main { padding: 15px; font-size: 16px; background: #28a745; color: white; border: none; }
-        #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; width:90%; border-radius:15px; }
+        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; overflow: hidden; }
+        #map { height: calc(100vh - 60px); width: 100%; }
+        #panel { height: 60px; display: flex; gap: 5px; padding: 5px; background: #333; align-items: center; justify-content: space-between; }
+        button { padding: 12px 15px; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; }
+        #sidebar { position:fixed; top:60px; right:-100%; width:100%; height:calc(100% - 60px); background:white; z-index:999; transition:0.3s; padding:15px; box-sizing: border-box; overflow-y: auto; }
+        #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
+        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:400px; box-sizing: border-box; }
+        input { display:block; width:100%; margin:10px 0; padding:12px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        #preview { width:100%; max-height:150px; display:none; margin-bottom:10px; object-fit: contain; }
+        .list-item { border-bottom:1px solid #eee; padding:15px 0; display:flex; align-items:center; gap:10px; }
     </style>
 </head>
 <body>
 
-<div id="app-container">
-    <div id="sidebar">
-        <div style="padding:10px; background:#333; color:white;"><b>TRAMOS Y ACOMETIDAS</b></div>
-        <div id="lista-registros"></div>
+    <div id="panel">
+        <button onclick="exportarSeleccionados()" style="background-color: #28a745; color: white;">💾 COMPARTIR</button>
+        <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
     </div>
-    <div id="map">
-        <button class="btn-gps" onclick="centrarGPS()">📍</button>
-    </div>
-    <button class="btn-main" onclick="exportarTodo()">📥 EXPORTAR TODO (KMZ+CSV+JPG)</button>
-</div>
-
-<div id="form-overlay">
-    <div class="form-box">
-        <h3>Editar Tramo / Acometida</h3>
-        <input type="text" id="codRuta" placeholder="Código" style="width:100%; padding:15px; margin-bottom:10px;">
-        <input type="text" id="numSerie" placeholder="Serie" style="width:100%; padding:15px;">
-        <button class="btn-main" style="background:#007bff; width:100%; margin-top:10px;" onclick="guardarDatos()">GUARDAR Y CERRAR</button>
-    </div>
-</div>
-
-<script>
-    // MaxZoom 20 para acometidas
-    var map = L.map('map', {maxZoom: 20}).setView([-15.48, -70.13], 18);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 20}).addTo(map);
     
-    var drawnItems = new L.FeatureGroup().addTo(map);
-    var drawControl = new L.Control.Draw({
-        edit: { featureGroup: drawnItems },
-        draw: { polygon: true, polyline: true, marker: true }
-    });
-    map.addControl(drawControl);
+    <div id="map"></div>
 
-    let activeLayer;
+    <div id="sidebar">
+        <h3>Gestionar Trazos</h3>
+        <button onclick="document.getElementById('sidebar').style.right = '-100%'" style="width:100%; background:#666; color:white;">CERRAR</button>
+        <div id="lista-trazos"></div>
+    </div>
 
-    map.on('draw:created', (e) => {
-        activeLayer = e.layer;
-        document.getElementById('form-overlay').style.display = 'flex';
-    });
+    <div id="form-overlay">
+        <div class="form-box">
+            <h3>Detalles del Punto</h3>
+            <input type="text" id="codRuta" placeholder="Código de Ruta">
+            <input type="text" id="numSerie" placeholder="N° Serie">
+            <input type="text" id="fases" placeholder="Fases (A,B,C)">
+            <button onclick="document.getElementById('camaraInput').click()" style="width:100%; background:#555; color:white;">📸 TOMAR FOTO</button>
+            <input type="file" id="camaraInput" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(event)">
+            <img id="preview" src="" alt="Foto">
+            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; background:#007bff; color:white; padding: 15px;">GUARDAR</button>
+        </div>
+    </div>
 
-    function centrarGPS() {
-        map.locate({setView: true, maxZoom: 19});
-        map.on('locationfound', (e) => { L.marker(e.latlng).addTo(map).bindPopup("Aquí estás").openPopup(); });
-    }
+    <script>
+        var map = L.map('map').setView([-15.48, -70.13], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        var drawnItems = new L.FeatureGroup().addTo(map);
+        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
 
-    function guardarDatos() {
-        activeLayer.myData = {
-            codigo: document.getElementById('codRuta').value,
-            serie: document.getElementById('numSerie').value,
-            fecha: new Date().toISOString(),
-            fotos: [] // Aquí se integrarían tus fotos procesadas
-        };
-        drawnItems.addLayer(activeLayer);
-        renderLista();
-        document.getElementById('form-overlay').style.display = 'none';
-    }
+        let activeLayer, fotoBase64 = "";
 
-    function renderLista() {
-        const container = document.getElementById('lista-registros');
-        container.innerHTML = "";
-        drawnItems.eachLayer((l, i) => {
-            if(!l.myData) return;
-            const div = document.createElement('div');
-            div.className = 'reg-item';
-            div.innerHTML = `<input type="checkbox" class="chk-export" data-id="${l._leaflet_id}" checked> 
-                             <span style="margin-left:10px;">Serie: ${l.myData.serie}</span>`;
-            container.appendChild(div);
+        map.on('draw:created', (e) => {
+            activeLayer = e.layer;
+            limpiarFormulario();
+            document.getElementById('form-overlay').style.display = 'flex';
         });
-    }
 
-    async function exportarTodo() {
-        const zip = new JSZip();
-        let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
-        
-        document.querySelectorAll('.chk-export:checked').forEach(chk => {
-            let id = chk.getAttribute('data-id');
-            let layer = drawnItems.getLayer(id);
-            let d = layer.myData;
+        function limpiarFormulario(l = null) {
+            document.getElementById('codRuta').value = l?.myData?.codigo || "";
+            document.getElementById('numSerie').value = l?.myData?.serie || "";
+            document.getElementById('fases').value = l?.myData?.fases || "";
+            fotoBase64 = l?.myData?.foto || "";
+            document.getElementById('preview').src = fotoBase64;
+            document.getElementById('preview').style.display = fotoBase64 ? 'block' : 'none';
+        }
+
+        function procesarImagen(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                fotoBase64 = ev.target.result;
+                document.getElementById('preview').src = fotoBase64;
+                document.getElementById('preview').style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function guardarDatos() {
+            activeLayer.myData = {
+                codigo: document.getElementById('codRuta').value || 'SinCodigo',
+                serie: document.getElementById('numSerie').value || 'S/N',
+                fases: document.getElementById('fases').value || 'N/A',
+                foto: fotoBase64,
+                fotoNombre: "FOTO_" + (document.getElementById('codRuta').value || Date.now()) + ".jpg"
+            };
+            if(!drawnItems.hasLayer(activeLayer)) drawnItems.addLayer(activeLayer);
+            actualizarLista();
+            document.getElementById('form-overlay').style.display = 'none';
+        }
+
+        function editarTrazo(id) {
+            activeLayer = drawnItems.getLayer(id);
+            limpiarFormulario(activeLayer);
+            document.getElementById('form-overlay').style.display = 'flex';
+        }
+
+        function actualizarLista() {
+            const container = document.getElementById('lista-trazos');
+            container.innerHTML = '';
+            drawnItems.eachLayer((l) => {
+                let id = L.stamp(l);
+                let div = document.createElement('div');
+                div.className = 'list-item';
+                div.innerHTML = `<input type="checkbox" class="export-check" value="${id}" checked> <span>${l.myData?.codigo || 'Trazo'}</span> <button onclick="editarTrazo(${id})">✏️</button>`;
+                container.appendChild(div);
+            });
+        }
+
+        async function exportarSeleccionados() {
+            const zip = new JSZip();
+            const fecha = new Date().toISOString().slice(0,10);
+            let csv = "Codigo,Serie,Fases,NombreArchivo\n";
+            let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
             
-            // KML con descripción para que fotos se vean en GIS
-            kml += `<Placemark><name>${d.serie}</name>
-                    <description><![CDATA[Cod: ${d.codigo}<br><img src="${d.serie}_0.jpg" width="200px">]]></description>
-                    <Point><coordinates>${layer.getLatLng().lng},${layer.getLatLng().lat}</coordinates></Point></Placemark>`;
-        });
+            let seleccionados = document.querySelectorAll('.export-check:checked');
+            if(seleccionados.length === 0) { alert("Selecciona al menos un trazo"); return; }
 
-        kml += `</Document></kml>`;
-        zip.file("doc.kml", kml);
-        const content = await zip.generateAsync({type:"blob"});
-        const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = "Proyecto_GIS.kmz"; a.click();
-    }
-</script>
+            seleccionados.forEach(chk => {
+                let l = drawnItems.getLayer(chk.value);
+                let d = l.myData;
+                csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
+                kml += `<Placemark><name>${d.codigo}</name>`;
+                if (l instanceof L.Polygon) {
+                    kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`;
+                    l.getLatLngs()[0].forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+                } else if (l instanceof L.Polyline) {
+                    kml += `<LineString><coordinates>`;
+                    l.getLatLngs().forEach(p => kml += `${p.lng},${p.lat},0 `);
+                    kml += `</coordinates></LineString>`;
+                } else {
+                    kml += `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point>`;
+                }
+                kml += `</Placemark>`;
+                if(d.foto) zip.file(d.fotoNombre, d.foto.split(',')[1], {base64: true});
+            });
+
+            kml += `</Document></kml>`;
+            zip.file(`Seleccion_${fecha}.csv`, csv);
+            zip.file(`Seleccion_${fecha}.kml`, kml);
+
+            const content = await zip.generateAsync({type:"blob"});
+            const file = new File([content], `Electropuno_${fecha}.zip`, { type: "application/zip" });
+
+            // Web Share API para abrir el menú de compartir del celular
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({ files: [file], title: 'GIS Data', text: 'Trazos Electropuno' });
+                } catch (err) {
+                    console.error("Error al compartir", err);
+                }
+            } else {
+                // Fallback si no es compatible (descarga normal)
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(content);
+                a.download = file.name;
+                a.click();
+            }
+        }
+    </script>
 </body>
 </html>
