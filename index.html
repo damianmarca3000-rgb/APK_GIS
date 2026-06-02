@@ -2,50 +2,52 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Electropuno Pro GIS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://unpkg.com/@zxing/library@0.20.0"></script>
     <style>
-        :root { --primary: #004a99; --accent: #28a745; }
-        body { margin:0; height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; }
-        #map { flex-grow: 1; z-index: 1; }
-        .toolbar { height: 60px; background: var(--primary); display: flex; align-items: center; padding: 0 10px; gap: 10px; color: white; overflow-x: auto; }
-        .drawer { position: fixed; right: -320px; top: 0; width: 300px; height: 100%; background: white; z-index: 9999; box-shadow: -2px 0 10px rgba(0,0,0,0.3); transition: 0.3s; padding: 15px; }
-        .card-img { width: 80px; height: 80px; object-fit: cover; border-radius: 4px; }
+        body, html { margin:0; padding:0; height:100%; font-family: sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        .ui-overlay { position: fixed; top: 10px; left: 10px; z-index: 1000; display: flex; gap: 5px; }
+        .sidebar { position: fixed; right: -300px; top: 0; width: 280px; height: 100%; background: white; z-index: 2000; transition: 0.3s; box-shadow: -2px 0 5px rgba(0,0,0,0.3); overflow-y: auto; padding: 15px; }
+        .btn { padding: 10px; border: none; border-radius: 4px; background: #007bff; color: white; cursor: pointer; }
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: none; justify-content: center; align-items: center; }
     </style>
 </head>
 <body>
 
-<div class="toolbar">
-    <button onclick="getLocation()">📍 GPS</button>
-    <button onclick="toggleDrawer()">📋 LISTA</button>
-    <button onclick="document.getElementById('import').click()">📂 KMZ</button>
-    <button onclick="exportarZip()" style="background: var(--accent);">💾 ZIP</button>
-    <input type="file" id="import" style="display:none" multiple onchange="importarKMZ(this.files)">
+<div class="ui-overlay">
+    <button class="btn" onclick="locateUser()">📍 GPS</button>
+    <button class="btn" onclick="toggleSidebar()">📋 LISTA</button>
+    <button class="btn" onclick="exportData()" style="background:#28a745;">💾 ZIP</button>
 </div>
 
 <div id="map"></div>
 
-<div id="drawer" class="drawer">
-    <h3>Gestión de Activos</h3>
-    <input type="text" id="search" onkeyup="filtrar()" placeholder="Buscar por serie...">
-    <div id="lista"></div>
+<div id="sidebar" class="sidebar">
+    <h3>Registros</h3>
+    <input type="text" id="search" placeholder="Buscar por serie..." onkeyup="filterList()">
+    <div id="list-container"></div>
+    <button class="btn" onclick="toggleSidebar()">CERRAR</button>
 </div>
 
-<div id="modal" style="display:none; position:fixed; z-index:10000; inset:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center;">
-    <div style="background:white; padding:20px; width:90%; max-width:400px; border-radius:8px;">
-        <h3>Registrar Elemento</h3>
-        <input type="text" id="m-serie" placeholder="Serie (QR/Manual)" style="width:100%; padding:8px;">
-        <button onclick="escanear()">📷 Escanear QR</button>
-        <input type="file" id="m-fotos" accept="image/*" multiple capture="environment">
-        <button class="btn" onclick="guardar()">GUARDAR</button>
+<div id="modal" class="modal">
+    <div style="background:white; padding:20px; border-radius:8px; width:90%; max-width:400px;">
+        <h3>Datos del Elemento</h3>
+        <input type="text" id="m-serie" placeholder="Serie (QR/Manual)" style="width:100%; padding:10px;">
+        <button class="btn" onclick="scanQR()">📷 Escanear</button>
+        <div id="photo-zone" style="margin:10px 0;">
+            <input type="file" id="m-fotos" accept="image/*" multiple>
+        </div>
+        <button class="btn" onclick="saveLayer()">GUARDAR</button>
     </div>
 </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.20.0"></script>
 
 <script>
     const map = L.map('map').setView([-15.48, -70.13], 15);
@@ -53,39 +55,67 @@
     const drawnItems = new L.FeatureGroup().addTo(map);
     new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { marker: true, polyline: true, polygon: true } }).addTo(map);
 
-    // 1. GPS Real-time
-    function getLocation() {
-        map.locate({setView: true, maxZoom: 17});
-    }
+    let currentLayer;
 
-    // 2. Escáner
-    async function escanear() {
-        const reader = new ZXing.BrowserMultiFormatReader();
-        const res = await reader.decodeOnceFromVideoDevice(null);
+    // GPS
+    function locateUser() { map.locate({setView: true, maxZoom: 16}); }
+
+    // Escáner QR
+    async function scanQR() {
+        const codeReader = new ZXing.BrowserMultiFormatReader();
+        const res = await codeReader.decodeOnceFromVideoDevice(null);
         document.getElementById('m-serie').value = res.text;
     }
 
-    // 3. Persistencia (IndexedDB mock-up logica)
-    // Se recomienda usar localForage para simplificar IndexedDB
-    function guardar() {
-        // Logica para capturar capas y guardar en IndexedDB
-        alert("Guardado localmente en IndexedDB");
+    // Dibujo
+    map.on('draw:created', (e) => {
+        currentLayer = e.layer;
+        document.getElementById('modal').style.display = 'flex';
+    });
+
+    // Guardado (Persistencia simplificada en localStorage)
+    function saveLayer() {
+        currentLayer.myData = {
+            serie: document.getElementById('m-serie').value,
+            timestamp: Date.now()
+        };
+        drawnItems.addLayer(currentLayer);
+        document.getElementById('modal').style.display = 'none';
+        updateList();
     }
 
-    // 4. Drawer & UI
-    function toggleDrawer() {
-        const d = document.getElementById('drawer');
-        d.style.right = d.style.right === '0px' ? '-320px' : '0px';
+    // Lista y Edición
+    function updateList() {
+        const list = document.getElementById('list-container');
+        list.innerHTML = '';
+        drawnItems.eachLayer(layer => {
+            let div = document.createElement('div');
+            div.className = 'list-item';
+            div.innerHTML = `<div>Serie: ${layer.myData?.serie || 'N/A'}</div>`;
+            div.ondblclick = () => map.flyTo(layer.getBounds ? layer.getBounds().getCenter() : layer.getLatLng(), 18);
+            list.appendChild(div);
+        });
     }
 
-    // 5. Importacion KMZ
-    async function importarKMZ(files) {
-        // Implementacion de JSZip para leer archivos .kmz (que son zips de kml)
-        for(let file of files) {
-            const zip = await JSZip.loadAsync(file);
-            const kmlText = await zip.file(/.*\.kml/)[0].async("string");
-            // Parsear KML y añadir a drawnItems
-        }
+    function toggleSidebar() {
+        const s = document.getElementById('sidebar');
+        s.style.right = s.style.right === '0px' ? '-300px' : '0px';
+    }
+
+    // Exportar ZIP
+    async function exportData() {
+        const zip = new JSZip();
+        let csv = "Serie,Lat,Lon\n";
+        drawnItems.eachLayer(l => {
+            const latlng = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
+            csv += `${l.myData?.serie},${latlng.lat},${latlng.lng}\n`;
+        });
+        zip.file("datos.csv", csv);
+        const content = await zip.generateAsync({type:"blob"});
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = "Electropuno_Data.zip";
+        link.click();
     }
 </script>
 </body>
