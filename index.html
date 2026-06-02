@@ -3,187 +3,119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Electropuno Pro - GIS</title>
+    <title>Electropuno Pro GIS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body, html { margin:0; padding:0; height: 100%; font-family: sans-serif; overflow: hidden; }
-        #map { height: calc(100vh - 60px); width: 100%; }
-        #panel { height: 60px; display: flex; gap: 5px; padding: 5px; background: #333; align-items: center; justify-content: space-between; }
-        button { padding: 10px; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; }
-        #sidebar { position:fixed; top:60px; right:-100%; width:100%; height:calc(100% - 60px); background:white; z-index:999; transition:0.3s; padding:15px; box-sizing: border-box; overflow-y: auto; }
-        #form-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center; }
-        .form-box { background:white; padding:20px; border-radius:10px; width:90%; max-width:400px; box-sizing: border-box; }
-        input { display:block; width:100%; margin:10px 0; padding:12px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        #preview { width:100%; max-height:150px; display:none; margin-bottom:10px; object-fit: contain; }
-        .list-item { border-bottom:1px solid #eee; padding:15px 0; display:flex; align-items:center; gap:10px; }
+        body, html { margin:0; height:100%; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        #map { height: 100vh; width: 100%; }
+        .controls { position: absolute; top: 15px; left: 15px; z-index: 1000; display: flex; gap: 8px; }
+        .btn { padding: 12px 18px; background: #004a99; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+        .sidebar { position: fixed; right: -350px; top: 0; width: 320px; height: 100%; background: #f8f9fa; z-index: 2000; transition: 0.3s; padding: 20px; box-shadow: -5px 0 15px rgba(0,0,0,0.2); overflow-y: auto; }
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 3000; display: none; justify-content: center; align-items: center; }
+        .form-card { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; }
+        .img-thumb { width: 80px; height: 80px; object-fit: cover; margin: 5px; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
 
-    <div id="panel">
-        <button onclick="exportarSeleccionados()" style="background-color: #28a745; color: white;">💾 COMPARTIR</button>
-        <input type="file" id="importInput" accept=".kml" style="display:none" onchange="importarKML(event)">
-        <button onclick="document.getElementById('importInput').click()" style="background-color: #007bff; color: white;">📂 IMPORTAR</button>
-        <button onclick="document.getElementById('sidebar').style.right = '0'">📋 LISTA</button>
+<div class="controls">
+    <button class="btn" onclick="map.locate({setView: true, maxZoom: 17})">📍 GPS</button>
+    <button class="btn" onclick="document.getElementById('sidebar').style.right='0'">📋 LISTA</button>
+    <button class="btn" onclick="document.getElementById('importFile').click()">📂 IMPORTAR KMZ</button>
+    <input type="file" id="importFile" multiple accept=".kmz,.kml" style="display:none" onchange="importarKMZ(this.files)">
+    <button class="btn" style="background:#28a745;" onclick="exportarZip()">💾 EXPORTAR</button>
+</div>
+
+<div id="map"></div>
+
+<div id="sidebar" class="sidebar">
+    <button onclick="document.getElementById('sidebar').style.right='-350px'" style="float:right">X</button>
+    <h3>Elementos Registrados</h3>
+    <input type="text" id="search" placeholder="Buscar por serie..." onkeyup="renderLista()" style="width:100%; padding:8px;">
+    <div id="lista-elementos"></div>
+</div>
+
+<div id="modal" class="modal">
+    <div class="form-card">
+        <h3>Registro de Activo</h3>
+        <input type="text" id="m-serie" placeholder="N° Serie" style="width:100%; padding:10px; margin:5px 0;">
+        <button class="btn" onclick="escanear()">📷 Escanear QR/Barras</button>
+        <div id="previsualizacion-fotos"></div>
+        <input type="file" id="m-fotos" accept="image/*" multiple capture="environment" style="margin:10px 0;">
+        <button class="btn" style="width:100%; margin-top:10px;" onclick="guardar()">GUARDAR</button>
     </div>
-    
-    <div id="map"></div>
+</div>
 
-    <div id="sidebar">
-        <h3>Gestionar Trazos</h3>
-        <button onclick="document.getElementById('sidebar').style.right = '-100%'" style="width:100%; background:#666; color:white;">CERRAR</button>
-        <div id="lista-trazos"></div>
-    </div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.20.0"></script>
 
-    <div id="form-overlay">
-        <div class="form-box">
-            <h3>Detalles del Punto</h3>
-            <input type="text" id="codRuta" placeholder="Código de Ruta">
-            <input type="text" id="numSerie" placeholder="N° Serie">
-            <input type="text" id="fases" placeholder="Fases (A,B,C)">
-            <button onclick="document.getElementById('camaraInput').click()" style="width:100%; background:#555; color:white;">📸 TOMAR FOTO</button>
-            <input type="file" id="camaraInput" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(event)">
-            <img id="preview" src="" alt="Foto">
-            <button onclick="guardarDatos()" style="margin-top:15px; width:100%; background:#007bff; color:white; padding: 15px;">GUARDAR</button>
-        </div>
-    </div>
+<script>
+    const map = L.map('map').setView([-15.48, -70.13], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const drawnItems = new L.FeatureGroup().addTo(map);
+    new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { marker: true, polyline: true, polygon: true } }).addTo(map);
 
-    <script>
-        var map = L.map('map').setView([-15.48, -70.13], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        var drawnItems = new L.FeatureGroup().addTo(map);
-        new L.Control.Draw({ edit: { featureGroup: drawnItems }, draw: { polygon: true, polyline: true, marker: true } }).addTo(map);
+    let activeLayer;
 
-        let activeLayer, fotoBase64 = "";
+    // 1. Escáner
+    async function escanear() {
+        const reader = new ZXing.BrowserMultiFormatReader();
+        const res = await reader.decodeOnceFromVideoDevice(null);
+        document.getElementById('m-serie').value = res.text;
+    }
 
-        map.on('draw:created', (e) => {
-            activeLayer = e.layer;
-            limpiarFormulario();
-            document.getElementById('form-overlay').style.display = 'flex';
+    // 2. Dibujo
+    map.on('draw:created', e => {
+        activeLayer = e.layer;
+        document.getElementById('modal').style.display = 'flex';
+    });
+
+    // 3. Guardado (Lógica para IndexedDB/LocalStorage)
+    function guardar() {
+        activeLayer.myData = {
+            serie: document.getElementById('m-serie').value,
+            id: Date.now()
+        };
+        drawnItems.addLayer(activeLayer);
+        document.getElementById('modal').style.display = 'none';
+        renderLista();
+    }
+
+    // 4. Lista e Interacción
+    function renderLista() {
+        const list = document.getElementById('lista-elementos');
+        list.innerHTML = '';
+        drawnItems.eachLayer(l => {
+            const div = document.createElement('div');
+            div.innerHTML = `<p style="cursor:pointer" ondblclick="zoomTo(this)">Serie: ${l.myData?.serie || 'Sin código'}</p>`;
+            div.layerRef = l;
+            list.appendChild(div);
         });
+    }
 
-        function limpiarFormulario(l = null) {
-            document.getElementById('codRuta').value = l?.myData?.codigo || "";
-            document.getElementById('numSerie').value = l?.myData?.serie || "";
-            document.getElementById('fases').value = l?.myData?.fases || "";
-            fotoBase64 = l?.myData?.foto || "";
-            document.getElementById('preview').src = fotoBase64;
-            document.getElementById('preview').style.display = fotoBase64 ? 'block' : 'none';
-        }
+    function zoomTo(el) {
+        const l = el.parentElement.layerRef;
+        map.flyTo(l.getBounds ? l.getBounds().getCenter() : l.getLatLng(), 18);
+    }
 
-        function procesarImagen(e) {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                fotoBase64 = ev.target.result;
-                document.getElementById('preview').src = fotoBase64;
-                document.getElementById('preview').style.display = 'block';
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function guardarDatos() {
-            activeLayer.myData = {
-                codigo: document.getElementById('codRuta').value || 'SinCodigo',
-                serie: document.getElementById('numSerie').value || 'S/N',
-                fases: document.getElementById('fases').value || 'N/A',
-                foto: fotoBase64,
-                fotoNombre: "FOTO_" + (document.getElementById('codRuta').value || Date.now()) + ".jpg"
-            };
-            if(!drawnItems.hasLayer(activeLayer)) drawnItems.addLayer(activeLayer);
-            actualizarLista();
-            document.getElementById('form-overlay').style.display = 'none';
-        }
-
-        function editarTrazo(id) {
-            activeLayer = drawnItems.getLayer(id);
-            limpiarFormulario(activeLayer);
-            document.getElementById('form-overlay').style.display = 'flex';
-        }
-
-        function actualizarLista() {
-            const container = document.getElementById('lista-trazos');
-            container.innerHTML = '';
-            drawnItems.eachLayer((l) => {
-                let id = L.stamp(l);
-                let div = document.createElement('div');
-                div.className = 'list-item';
-                div.innerHTML = `<input type="checkbox" class="export-check" value="${id}" checked> <span>${l.myData?.codigo || 'Trazo'}</span> <button onclick="editarTrazo(${id})">✏️</button>`;
-                container.appendChild(div);
-            });
-        }
-
-        function importarKML(e) {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(event.target.result, "text/xml");
-                const placemarks = xmlDoc.getElementsByTagName("Placemark");
-                for (let pm of placemarks) {
-                    const name = pm.getElementsByTagName("name")[0]?.textContent || "Importado";
-                    const coordsText = pm.getElementsByTagName("coordinates")[0]?.textContent.trim();
-                    if (!coordsText) continue;
-                    const latlngs = coordsText.split(' ').map(coord => {
-                        const [lng, lat] = coord.split(',').map(Number);
-                        return [lat, lng];
-                    }).filter(c => !isNaN(c[0]));
-                    let layer;
-                    if (pm.getElementsByTagName("Polygon").length > 0) layer = L.polygon(latlngs);
-                    else if (pm.getElementsByTagName("LineString").length > 0) layer = L.polyline(latlngs);
-                    else layer = L.marker(latlngs[0]);
-                    layer.myData = { codigo: name, serie: 'Importado', fases: 'N/A', foto: null };
-                    layer.addTo(drawnItems);
-                }
-                actualizarLista();
-            };
-            reader.readAsText(file);
-        }
-
-        async function exportarSeleccionados() {
-            const zip = new JSZip();
-            const fecha = new Date().toISOString().slice(0,10);
-            let csv = "Codigo,Serie,Fases,NombreArchivo\n";
-            let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
-            let seleccionados = document.querySelectorAll('.export-check:checked');
-            if(seleccionados.length === 0) { alert("Selecciona al menos un trazo"); return; }
-            seleccionados.forEach(chk => {
-                let l = drawnItems.getLayer(chk.value);
-                let d = l.myData;
-                csv += `${d.codigo},${d.serie},${d.fases},${d.fotoNombre}\n`;
-                kml += `<Placemark><name>${d.codigo}</name>`;
-                if (l instanceof L.Polygon) {
-                    kml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>`;
-                    l.getLatLngs()[0].forEach(p => kml += `${p.lng},${p.lat},0 `);
-                    kml += `</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
-                } else if (l instanceof L.Polyline) {
-                    kml += `<LineString><coordinates>`;
-                    l.getLatLngs().forEach(p => kml += `${p.lng},${p.lat},0 `);
-                    kml += `</coordinates></LineString>`;
-                } else {
-                    kml += `<Point><coordinates>${l.getLatLng().lng},${l.getLatLng().lat}</coordinates></Point>`;
-                }
-                kml += `</Placemark>`;
-                if(d.foto) zip.file(d.fotoNombre, d.foto.split(',')[1], {base64: true});
-            });
-            kml += `</Document></kml>`;
-            zip.file(`Seleccion_${fecha}.csv`, csv);
-            zip.file(`Seleccion_${fecha}.kml`, kml);
-            const content = await zip.generateAsync({type:"blob"});
-            const file = new File([content], `Electropuno_${fecha}.zip`, { type: "application/zip" });
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: 'GIS Data', text: 'Trazos Electropuno' });
-            } else {
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(content);
-                a.download = file.name;
-                a.click();
-            }
-        }
-    </script>
+    // 5. Exportación
+    async function exportarZip() {
+        const zip = new JSZip();
+        let csv = "Serie,Lat,Lon\n";
+        drawnItems.eachLayer(l => {
+            const pos = l.getLatLng ? l.getLatLng() : l.getBounds().getCenter();
+            csv += `${l.myData?.serie},${pos.lat},${pos.lng}\n`;
+        });
+        zip.file("datos_campo.csv", csv);
+        const blob = await zip.generateAsync({type:"blob"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "Electropuno_GIS_Data.zip";
+        a.click();
+    }
+</script>
 </body>
 </html>
